@@ -204,7 +204,6 @@ func TestDelete(t *testing.T) {
 	fmt.Println(string(b))
 }
 
-// 1482 ns/op
 func BenchmarkMapSet(b *testing.B) {
 	m := newMap()
 	for i := 0; i < b.N; i++ {
@@ -212,7 +211,6 @@ func BenchmarkMapSet(b *testing.B) {
 	}
 }
 
-// 1709 ns/op
 func BenchmarkSyncMapSet(b *testing.B) {
 	m := sync.Map{}
 
@@ -221,10 +219,9 @@ func BenchmarkSyncMapSet(b *testing.B) {
 	}
 }
 
-// 173 ns/op
 func BenchmarkMapGet(b *testing.B) {
 	m := newMap()
-	for i := 0; i < 100000; i++ {
+	for i := 0; i < 1000000; i++ {
 		m.Set(fmt.Sprintf("username-%d", i), fmt.Sprintf("cmap-%d", i))
 	}
 
@@ -235,10 +232,11 @@ func BenchmarkMapGet(b *testing.B) {
 	}
 }
 
-// 186 ns/op
+// BenchmarkSyncMapGet-4   	 3000000	       347 ns/op	      24 B/op	       2 allocs/op
+// go test -benchmem -run=^$ cmap -bench ^(BenchmarkSyncMapGet)$
 func BenchmarkSyncMapGet(b *testing.B) {
 	m := sync.Map{}
-	for i := 0; i < 100000; i++ {
+	for i := 0; i < 1000000; i++ {
 		m.Store(fmt.Sprintf("username-%d", i), fmt.Sprintf("cmap-%d", i))
 	}
 
@@ -249,9 +247,8 @@ func BenchmarkSyncMapGet(b *testing.B) {
 	}
 }
 
-// length, allocs/op
-// 40      3773 ns/op
-// go test -benchmem -run=^$ cmap -bench ^(BenchmarkSyncMapSetParallel)$
+// BenchmarkMapSetParallel-4   	  300000	      4273 ns/op	    6434 B/op	      40 allocs/op
+// go test -benchmem -run=^$ cmap -bench ^(BenchmarkMapSetParallel)$
 func BenchmarkMapSetParallel(b *testing.B) {
 	m := newMap()
 	b.RunParallel(func(pb *testing.PB) {
@@ -264,8 +261,7 @@ func BenchmarkMapSetParallel(b *testing.B) {
 	})
 }
 
-// length, allocs/op
-// 40      4494 ns/op
+// BenchmarkSyncMapSetParallel-4   	  300000	      3833 ns/op	    6464 B/op	      42 allocs/op
 // test -benchmem -run=^$ cmap -bench ^(BenchmarkSyncMapSetParallel)$
 func BenchmarkSyncMapSetParallel(b *testing.B) {
 	m := sync.Map{}
@@ -279,11 +275,11 @@ func BenchmarkSyncMapSetParallel(b *testing.B) {
 	})
 }
 
-// BenchmarkMapGetParallel-4   	  300000	      3333 ns/op	    5399 B/op	       3 allocs/op
+// BenchmarkMapGetParallel-4   	  500000	      3483 ns/op	    5399 B/op	       3 allocs/op
 // go test -benchmem -run=^$ cmap -bench ^(BenchmarkMapGetParallel)$
 func BenchmarkMapGetParallel(b *testing.B) {
 	m := newMap()
-	for i := 0; i < 100000; i++ {
+	for i := 0; i < 1000000; i++ {
 		m.Set(fmt.Sprintf("key-%d", i), i)
 	}
 
@@ -297,11 +293,11 @@ func BenchmarkMapGetParallel(b *testing.B) {
 	})
 }
 
-// BenchmarkSyncMapGetParallel-4   	  300000	      3733 ns/op	    5455 B/op	       5 allocs/op
+// BenchmarkSyncMapGetParallel-4   	  200000	      5359 ns/op	    5399 B/op	       3 allocs/op
 // go test -benchmem -run=^$ cmap -bench ^(BenchmarkSyncMapGetParallel)$
 func BenchmarkSyncMapGetParallel(b *testing.B) {
 	m := sync.Map{}
-	for i := 0; i < 100000; i++ {
+	for i := 0; i < 1000000; i++ {
 		m.Store(fmt.Sprintf("key-%d", i), i)
 	}
 	b.ResetTimer()

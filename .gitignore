@@ -1,3 +1,5 @@
 .vscode/*
 debug.test
 api/*
+tmp.go
+tmp/*

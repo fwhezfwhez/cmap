@@ -1,7 +1,11 @@
 package cmap
 
 import (
+	"encoding/json"
+	"fmt"
+	"math"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -10,6 +14,46 @@ type Value struct {
 	v interface{}
 	// expire_in, -1-no time limit
 	exp int64
+
+	// Map's offset, when map exec set/delete offset++
+	offset int64
+	// exec time unixnano
+	execAt int64
+}
+
+// v is latter than v2 in time
+func (v Value) LatterThan(v2 Value) bool {
+	if v.execAt > v2.execAt {
+		return true
+	}
+
+	if v.execAt < v2.execAt {
+		return false
+	}
+
+	return v.offset > v2.offset
+}
+
+// v is former than v2 in time
+func (v Value) FormerThan(v2 Value) bool {
+	if v.execAt < v2.execAt {
+		return true
+	}
+	if v.execAt > v2.execAt {
+		return false
+	}
+	return v.offset < v2.offset
+}
+
+func (v Value) detail() string {
+	m := map[string]interface{}{
+		"v":       v.v,
+		"exp":     v.exp,
+		"offset":  v.offset,
+		"exec_at": v.execAt,
+	}
+	b, _ := json.MarshalIndent(m, "", "  ")
+	return string(b)
 }
 
 const (
@@ -28,6 +72,24 @@ type Map struct {
 
 	wl    *sync.RWMutex
 	write map[string]Value
+
+	dll    *sync.RWMutex
+	offset int64
+	del    map[string]Value
+}
+
+// Help viewing map's detail.
+type mapView struct {
+	Mode int
+
+	M map[string]interface{}
+
+	Dirty map[string]interface{}
+
+	Write map[string]interface{}
+
+	Offset int64
+	Del    map[string]interface{}
 }
 
 func newMap() *Map {
@@ -41,6 +103,9 @@ func newMap() *Map {
 
 		wl:    &sync.RWMutex{},
 		write: make(map[string]Value),
+
+		dll: &sync.RWMutex{},
+		del: make(map[string]Value),
 	}
 }
 
@@ -52,15 +117,19 @@ func (m *Map) GLock() {
 	m.l.Lock()
 	m.wl.Lock()
 	m.dl.Lock()
+	m.dll.Lock()
 }
 func (m *Map) GUnlock() {
 	m.l.Unlock()
 	m.wl.Unlock()
 	m.dl.Unlock()
+	m.dll.Unlock()
 }
 
 // map.Set
 func (m *Map) Set(key string, value interface{}) {
+	ext := time.Now().UnixNano()
+	offset := m.offsetIncr()
 
 	// only when not busy, m is writable
 	if m.mode != M_BUSY {
@@ -69,6 +138,9 @@ func (m *Map) Set(key string, value interface{}) {
 		m.m[key] = Value{
 			v:   value,
 			exp: -1,
+
+			execAt: ext,
+			offset: offset,
 		}
 		m.l.Unlock()
 
@@ -76,8 +148,10 @@ func (m *Map) Set(key string, value interface{}) {
 
 	m.dl.Lock()
 	m.dirty[key] = Value{
-		v:   value,
-		exp: -1,
+		v:      value,
+		exp:    -1,
+		execAt: ext,
+		offset: offset,
 	}
 	m.dl.Unlock()
 
@@ -87,15 +161,27 @@ func (m *Map) Set(key string, value interface{}) {
 		m.write[key] = Value{
 			v:   value,
 			exp: -1,
+
+			execAt: ext,
+			offset: offset,
 		}
 		m.wl.Unlock()
 	}
+}
+
+func (m *Map) offsetIncr() int64 {
+	atomic.AddInt64(&m.offset, 1)
+	atomic.CompareAndSwapInt64(&m.offset, math.MaxInt64, 0)
+	return m.offset
 }
 
 // map.SetEX
 // key-value will be put with expired time limit.
 // expired keys will be deleted as soon as calling m.Get(key), or calling m.ClearExpireKeys()
 func (m *Map) SetEx(key string, value interface{}, seconds int) {
+	ext := time.Now().UnixNano()
+	offset := m.offsetIncr()
+
 	// only when not busy, m is writable
 	if m.mode != M_BUSY {
 		m.l.Lock()
@@ -103,6 +189,9 @@ func (m *Map) SetEx(key string, value interface{}, seconds int) {
 		m.m[key] = Value{
 			v:   value,
 			exp: time.Now().Add(time.Duration(seconds) * time.Second).UnixNano(),
+
+			execAt: ext,
+			offset: offset,
 		}
 		m.l.Unlock()
 
@@ -111,8 +200,10 @@ func (m *Map) SetEx(key string, value interface{}, seconds int) {
 	m.dl.Lock()
 
 	m.dirty[key] = Value{
-		v:   value,
-		exp: time.Now().Add(time.Duration(seconds) * time.Second).UnixNano(),
+		v:      value,
+		exp:    time.Now().Add(time.Duration(seconds) * time.Second).UnixNano(),
+		execAt: ext,
+		offset: offset,
 	}
 	m.dl.Unlock()
 
@@ -120,8 +211,10 @@ func (m *Map) SetEx(key string, value interface{}, seconds int) {
 	if m.mode == M_BUSY {
 		m.wl.Lock()
 		m.write[key] = Value{
-			v:   value,
-			exp: time.Now().Add(time.Duration(seconds) * time.Second).UnixNano(),
+			v:      value,
+			exp:    time.Now().Add(time.Duration(seconds) * time.Second).UnixNano(),
+			execAt: ext,
+			offset: offset,
 		}
 		m.wl.Unlock()
 
@@ -167,6 +260,106 @@ func (m *Map) Get(key string) interface{} {
 	} else {
 		return getFrom(m.dl, m.dirty, key)
 	}
+}
+
+// Delete
+func (m *Map) Delete(key string) {
+	offset := m.offsetIncr()
+	ext := time.Now().UnixNano()
+	if m.mode == M_FREE {
+		m.l.RLock()
+		_, ok := m.m[key]
+		m.l.RUnlock()
+
+		if ok {
+			m.l.Lock()
+			delete(m.m, key)
+			m.l.Unlock()
+		}
+	}
+
+	m.dl.RLock()
+	_, ok2 := m.dirty[key]
+	m.dl.RUnlock()
+
+	if ok2 {
+		m.dl.Lock()
+		delete(m.dirty, key)
+		m.dl.Unlock()
+	}
+
+	if m.mode == M_BUSY {
+		m.dll.Lock()
+		m.del[key] = Value{
+			exp: 0,
+			v:   nil,
+
+			execAt: ext,
+			offset: offset,
+		}
+		m.dll.Unlock()
+	}
+}
+
+func (m *Map) Detail() string {
+	m.GLock()
+	defer m.GUnlock()
+
+	var listMaxNum = 10
+	var flag = 0
+
+	mv := mapView{
+		M:     make(map[string]interface{}),
+		Dirty: make(map[string]interface{}),
+		Del:   make(map[string]interface{}),
+		Write: make(map[string]interface{}),
+	}
+	mv.Offset = m.offset
+
+	for k, _ := range m.m {
+		flag++
+		mv.M[k] = m.m[k].detail()
+		if flag > listMaxNum {
+			mv.M["reach-max-detail"] = "end"
+			break
+		}
+	}
+	flag = 0
+	for k, _ := range m.dirty {
+		mv.Dirty[k] = m.dirty[k].detail()
+		flag++
+		if flag > listMaxNum {
+			mv.Dirty["reach-max-detail"] = "end"
+			break
+		}
+	}
+
+	flag = 0
+	for k, _ := range m.write {
+		mv.Write[k] = m.write[k].detail()
+		flag++
+		if flag > listMaxNum {
+			mv.Write["reach-max-detail"] = "end"
+			break
+		}
+	}
+
+	flag = 0
+	for k, _ := range m.del {
+		mv.Del[k] = m.del[k].detail()
+		flag++
+		if flag > listMaxNum {
+			mv.Del["reach-max-detail"] = "end"
+			break
+		}
+	}
+
+	b, e := json.MarshalIndent(mv, "", "  ")
+	if e != nil {
+		fmt.Println(e.Error())
+		return ""
+	}
+	return string(b)
 }
 
 func getFrom(l *sync.RWMutex, m map[string]Value, key string) interface{} {
@@ -278,10 +471,29 @@ func (m *Map) clearExpireKeys() int {
 	}
 	m.wl.RUnlock()
 
+	m.dll.Lock()
+	for k, v := range m.del {
+		v2, ok := m.m[k]
+		if !ok {
+			delete(m.del, k)
+			continue
+		}
+		if v.LatterThan(v2) {
+			delete(m.del, k)
+			delete(m.m, k)
+		}
+	}
+	m.dll.Unlock()
+
 	m.l.Unlock()
 
 	m.wl.Lock()
 	m.write = make(map[string]Value)
 	m.wl.Unlock()
+
+	m.dll.Lock()
+	m.del = make(map[string]Value)
+	m.dll.Unlock()
+
 	return num
 }

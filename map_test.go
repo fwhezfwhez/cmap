@@ -1,9 +1,11 @@
 package cmap
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"os"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -20,6 +22,53 @@ func TestMap(t *testing.T) {
 	fmt.Println(m.ClearExpireKeys())
 
 	fmt.Println(m.Len())
+}
+
+func TestMap2(t *testing.T) {
+	m := newMap()
+	m.Set("username1", "fengtao")
+	m.SetEx("username", "fengtao", 5)
+	m.SetEx("hehe", "xxx", 6)
+
+	// m.PrintDetail()
+
+	m.Delete("username")
+	m.Delete("username1")
+	m.Delete("hehe")
+
+	for i := 0; i < 1000; i++ {
+		go func(i int) {
+			var setdone = make(chan bool, 1)
+			go func(j int, setdone chan bool) {
+				<-setdone
+				time.Sleep(1 * time.Second)
+				m.Delete(strconv.Itoa(i))
+			}(i, setdone)
+
+			m.Set(strconv.Itoa(i), i)
+			setdone <- true
+		}(i)
+	}
+	for i := 0; i < 1000; i++ {
+		go func(i int) {
+			m.ClearExpireKeys()
+		}(i)
+	}
+	fmt.Println(m.m["username"])
+	time.Sleep(10 * time.Second)
+	m.PrintDetail()
+}
+
+func TestMap3(t *testing.T) {
+	m := newMap()
+	var i = 1
+	m.Set(fmt.Sprintf("key-%d", i), i)
+	m.SetEx(fmt.Sprintf("ex-key-%d", i), i, 3+i)
+
+	m.Delete(fmt.Sprintf("key-%d", i))
+	m.Delete(fmt.Sprintf("ex-key-%d", i))
+
+	m.PrintDetail()
 }
 
 func TestWRCMap(t *testing.T) {
@@ -106,6 +155,53 @@ func TestWRCMap(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		return
 	}
+}
+
+func TestDelete(t *testing.T) {
+	m := newMap()
+	var wg sync.WaitGroup
+	wg.Add(10 + 100000)
+	for i := 0; i < 100000; i++ {
+		go func(i int) {
+			defer wg.Done()
+			defer func() {
+				if e := recover(); e != nil {
+					fmt.Println(e)
+					os.Exit(-1)
+				}
+			}()
+
+			m.Set(fmt.Sprintf("key-%d", i), i)
+			m.SetEx(fmt.Sprintf("ex-key-%d", i), i, 3+i)
+
+			m.Delete(fmt.Sprintf("key-%d", i))
+			m.Delete(fmt.Sprintf("ex-key-%d", i))
+		}(i)
+	}
+
+	for i := 0; i < 10; i++ {
+		go func(i int) {
+			defer wg.Done()
+
+			defer func() {
+				if e := recover(); e != nil {
+					fmt.Println(e)
+					os.Exit(-1)
+				}
+			}()
+			n := m.ClearExpireKeys()
+			fmt.Println(n)
+		}(i)
+	}
+
+	wg.Wait()
+
+	b, e := json.MarshalIndent(m.Detail(), "", "  ")
+	if e != nil {
+		fmt.Println(e)
+		return
+	}
+	fmt.Println(string(b))
 }
 
 // 1482 ns/op

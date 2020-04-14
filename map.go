@@ -45,15 +45,14 @@ func (v Value) FormerThan(v2 Value) bool {
 	return v.offset < v2.offset
 }
 
-func (v Value) detail() string {
+func (v Value) detail() map[string]interface{} {
 	m := map[string]interface{}{
 		"v":       v.v,
 		"exp":     v.exp,
 		"offset":  v.offset,
 		"exec_at": v.execAt,
 	}
-	b, _ := json.MarshalIndent(m, "", "  ")
-	return string(b)
+	return m
 }
 
 const (
@@ -126,13 +125,34 @@ func (m *Map) GUnlock() {
 	m.dll.Unlock()
 }
 
+func (m *Map) GRLock() {
+	m.l.RLock()
+	m.wl.RLock()
+	m.dl.RLock()
+	m.dll.RLock()
+}
+func (m *Map) GRUnlock() {
+	m.l.RUnlock()
+	m.wl.RUnlock()
+	m.dl.RUnlock()
+	m.dll.RUnlock()
+}
+
+func (m *Map) IsBusy() bool {
+	m.GRLock()
+
+	defer m.GRUnlock()
+
+	return m.mode == M_BUSY
+}
+
 // map.Set
 func (m *Map) Set(key string, value interface{}) {
 	ext := time.Now().UnixNano()
 	offset := m.offsetIncr()
 
 	// only when not busy, m is writable
-	if m.mode != M_BUSY {
+	if !m.IsBusy() {
 		m.l.Lock()
 
 		m.m[key] = Value{
@@ -156,7 +176,7 @@ func (m *Map) Set(key string, value interface{}) {
 	m.dl.Unlock()
 
 	// only when m is busy, write map is writable
-	if m.mode == M_BUSY {
+	if m.IsBusy() {
 		m.wl.Lock()
 		m.write[key] = Value{
 			v:   value,
@@ -183,7 +203,7 @@ func (m *Map) SetEx(key string, value interface{}, seconds int) {
 	offset := m.offsetIncr()
 
 	// only when not busy, m is writable
-	if m.mode != M_BUSY {
+	if !m.IsBusy() {
 		m.l.Lock()
 
 		m.m[key] = Value{
@@ -208,7 +228,7 @@ func (m *Map) SetEx(key string, value interface{}, seconds int) {
 	m.dl.Unlock()
 
 	// only when m is busy, write map is writable
-	if m.mode == M_BUSY {
+	if m.IsBusy() {
 		m.wl.Lock()
 		m.write[key] = Value{
 			v:      value,
@@ -230,7 +250,7 @@ func (m *Map) SetNx(key string, value interface{}) {
 // map.SetEXNX
 // If key exist, do nothing, otherwise set key,value into map
 func (m *Map) SetExNx(key string, value interface{}, seconds int) {
-	if m.mode == M_BUSY {
+	if m.IsBusy() {
 		m.dl.RLock()
 		_, exist := m.dirty[key]
 		m.dl.RUnlock()
@@ -255,7 +275,7 @@ func (m *Map) SetExNx(key string, value interface{}, seconds int) {
 
 // If key is expired or not existed, return nil
 func (m *Map) Get(key string) interface{} {
-	if m.mode != M_BUSY {
+	if !m.IsBusy() {
 		return getFrom(m.l, m.m, key)
 	} else {
 		return getFrom(m.dl, m.dirty, key)
@@ -266,7 +286,7 @@ func (m *Map) Get(key string) interface{} {
 func (m *Map) Delete(key string) {
 	offset := m.offsetIncr()
 	ext := time.Now().UnixNano()
-	if m.mode == M_FREE {
+	if !m.IsBusy() {
 		m.l.RLock()
 		_, ok := m.m[key]
 		m.l.RUnlock()
@@ -288,7 +308,7 @@ func (m *Map) Delete(key string) {
 		m.dl.Unlock()
 	}
 
-	if m.mode == M_BUSY {
+	if m.IsBusy() {
 		m.dll.Lock()
 		m.del[key] = Value{
 			exp: 0,
@@ -301,10 +321,7 @@ func (m *Map) Delete(key string) {
 	}
 }
 
-func (m *Map) Detail() string {
-	m.GLock()
-	defer m.GUnlock()
-
+func (m *Map) Detail() mapView {
 	var listMaxNum = 10
 	var flag = 0
 
@@ -316,6 +333,7 @@ func (m *Map) Detail() string {
 	}
 	mv.Offset = m.offset
 
+	m.l.RLock()
 	for k, _ := range m.m {
 		flag++
 		mv.M[k] = m.m[k].detail()
@@ -324,6 +342,9 @@ func (m *Map) Detail() string {
 			break
 		}
 	}
+	m.l.RUnlock()
+
+	m.dl.RLock()
 	flag = 0
 	for k, _ := range m.dirty {
 		mv.Dirty[k] = m.dirty[k].detail()
@@ -333,7 +354,9 @@ func (m *Map) Detail() string {
 			break
 		}
 	}
+	m.dl.RUnlock()
 
+	m.wl.RLock()
 	flag = 0
 	for k, _ := range m.write {
 		mv.Write[k] = m.write[k].detail()
@@ -343,8 +366,10 @@ func (m *Map) Detail() string {
 			break
 		}
 	}
+	m.wl.RUnlock()
 
 	flag = 0
+	m.dll.RLock()
 	for k, _ := range m.del {
 		mv.Del[k] = m.del[k].detail()
 		flag++
@@ -353,12 +378,17 @@ func (m *Map) Detail() string {
 			break
 		}
 	}
+	m.dll.RUnlock()
+	return mv
+}
 
-	b, e := json.MarshalIndent(mv, "", "  ")
+func (m *Map) PrintDetail() string {
+	b, e := json.MarshalIndent(m.Detail(), "", "  ")
 	if e != nil {
 		fmt.Println(e.Error())
 		return ""
 	}
+	fmt.Println(string(b))
 	return string(b)
 }
 
@@ -420,13 +450,41 @@ func (m *Map) Len() int {
 // operation of read will use Map.dirty.
 // After clear job has been done, Map.dirty will be cleared and copy from Map.m, Map.write will be unwritenable and data in Map.write will sync to Map.m.
 func (m *Map) ClearExpireKeys() int {
-	if m.mode == M_BUSY {
+	if m.IsBusy() {
 		// on clearing job, another clear job do nothing
 		// returned cleared key number is not concurrently consistent, because m.mode is not considered locked.
 		return 0
 	}
-
+	// clear Map.m expired keys
 	n := m.clearExpireKeys()
+
+	// sync new writen data from Map.write
+	m.l.Lock()
+
+	m.wl.Lock()
+	for k, v := range m.write {
+		m.m[k] = v
+	}
+	m.write = make(map[string]Value)
+	m.wl.Unlock()
+
+	// sync deleted operation from Map.del
+	m.dll.Lock()
+	for k, v := range m.del {
+		v2, ok := m.m[k]
+		if !ok {
+			delete(m.del, k)
+			continue
+		}
+		if v.LatterThan(v2) {
+			delete(m.del, k)
+			delete(m.m, k)
+		}
+	}
+	m.del = make(map[string]Value)
+	m.dll.Unlock()
+
+	m.l.Unlock()
 
 	m.dl.Lock()
 	m.dirty = make(map[string]Value)
@@ -443,7 +501,6 @@ func (m *Map) ClearExpireKeys() int {
 func (m *Map) clearExpireKeys() int {
 	m.setBusy()
 	defer m.setFree()
-
 	var num int
 	var shouldDelete = make([]string, 0, len(m.m))
 
@@ -465,35 +522,6 @@ func (m *Map) clearExpireKeys() int {
 		delete(m.m, v)
 	}
 
-	m.wl.RLock()
-	for k, v := range m.write {
-		m.m[k] = v
-	}
-	m.wl.RUnlock()
-
-	m.dll.Lock()
-	for k, v := range m.del {
-		v2, ok := m.m[k]
-		if !ok {
-			delete(m.del, k)
-			continue
-		}
-		if v.LatterThan(v2) {
-			delete(m.del, k)
-			delete(m.m, k)
-		}
-	}
-	m.dll.Unlock()
-
 	m.l.Unlock()
-
-	m.wl.Lock()
-	m.write = make(map[string]Value)
-	m.wl.Unlock()
-
-	m.dll.Lock()
-	m.del = make(map[string]Value)
-	m.dll.Unlock()
-
 	return num
 }

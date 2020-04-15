@@ -8,6 +8,13 @@
     <a href="https://codecov.io/gh/fwhezfwhez/cmap"><img src="https://codecov.io/gh/fwhezfwhez/cmap/branch/master/graph/badge.svg"></a>
 </p>
 
+cmap is a concurrently safe map in golang. Providing apis below:
+
+- SET
+- GET
+- SETEX
+- SETNX
+
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
 **Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
@@ -17,14 +24,6 @@
   - [Auto-generate](#auto-generate)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
-
-
-cmap is a concurrently safe map in golang. Providing apis below:
-
-- SET
-- GET
-- SETEX
-- SETNX
 
 ## Comparing with sync.map
 | cases | cmap | sync.map | url |

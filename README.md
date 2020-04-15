@@ -41,8 +41,9 @@ import(
     "fmt"
 )
 func main() {
-    content := cmap.GenerateTypeSyncMap()
-    fmt.Println(content)
+ 	fmt.Println(GenerateTypeSyncMap("User", map[string]string{
+		"${package_name}": "model",
+	}))
 }
 ```
 

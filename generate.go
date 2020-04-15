@@ -39,21 +39,21 @@ import (
 		}
 	}()
 */
+// value saved
 type ${Model}Value struct {
-	//
-	IsNil bool
 	// value
 	v ${Model}
-	// expire_in, -1-no time limit
+	// value will be expired in exp seconds, -1 means no time limit
 	exp int64
 
-	// Map's offset, when map exec set/delete offset++
+	// Map's offset, when map exec set/delete, offset++
 	offset int64
-	// exec time unixnano
+	// generated time when a value is set, unixnano
 	execAt int64
 }
 
 // v is latter than v2 in time
+// LatterThan helps judge set/del/sync make sense or not
 func (v ${Model}Value) LatterThan(v2 ${Model}Value) bool {
 	if v.execAt > v2.execAt {
 		return true
@@ -77,6 +77,7 @@ func (v ${Model}Value) FormerThan(v2 ${Model}Value) bool {
 	return v.offset < v2.offset
 }
 
+// make value readable
 func (v ${Model}Value) detail() map[string]interface{} {
 	m := map[string]interface{}{
 		"v":       v.v,
@@ -87,11 +88,28 @@ func (v ${Model}Value) detail() map[string]interface{} {
 	return m
 }
 
+// M_FREE and M_BUSY are signal of map.m state.
+// When map.mode == M_FREE, data are writable and readable using map.m.
+// When map.mode == M_BUSY, data are writable and readble using map.dirty, writable map.write and writable map.del
 const (
 	${MODEL}_M_FREE = 0
 	${MODEL}_M_BUSY = 1
 )
 
+// Map is concurrently safe, and faster than sync.Map.
+// Map consist of m, dirty, write, del, these 4 data register.
+// In M_FREE mode, map.m is writable/readable to users.
+// When calling map.ClearExpireKeys(), map will change mode into M_BUSY.
+// In B_BUSY mode, map.m is unreadable and unwritable. users read data from dirty.
+// At this moment,
+//    writing operation will write data to map.dirty, map.write
+//    deleting operation will write to map.del
+// As soon as clearing job done, mode set to M_FREE,
+// At this moment,
+//    map.m is return to job, writed and read
+//    map.write change to read-only and data in m.write will be sync to map.m then cleared
+//    map.del change to read-only and data in m.del will sync to map.m then cleared
+//    map.dirty are first be cleared and then synchronizing data from map.m and block new write request, after sync job done, finish all writing request.
 type ${Model}Map struct {
 	mode int
 
@@ -110,6 +128,8 @@ type ${Model}Map struct {
 }
 
 // Help viewing map's detail.
+//   b, e:= json.MarshalIndent(m.Detail(), "", "  ")
+//   fmt.Println(string(b))
 type ${model}MapView struct {
 	Mode int
 
@@ -126,8 +146,9 @@ type ${model}MapView struct {
 func new${Model}Map() *${Model}Map {
 	return &${Model}Map{
 		mode: ${MODEL}_M_FREE,
-		l:    &sync.RWMutex{},
-		m:    make(map[string]${Model}Value),
+
+		l: &sync.RWMutex{},
+		m: make(map[string]${Model}Value),
 
 		dl:    &sync.RWMutex{},
 		dirty: make(map[string]${Model}Value),
@@ -144,26 +165,31 @@ func new${Model}Map() *${Model}Map {
 func New${Model}Map() *${Model}Map {
 	return new${Model}Map()
 }
-func (m *${Model}Map) GLock() {
+
+// Pause the world
+// gLock and gUnlock must run in pair
+func (m *${Model}Map) gLock() {
 	m.l.Lock()
 	m.wl.Lock()
 	m.dl.Lock()
 	m.dll.Lock()
 }
-func (m *${Model}Map) GUnlock() {
+
+// Continue
+func (m *${Model}Map) gUnlock() {
 	m.l.Unlock()
 	m.wl.Unlock()
 	m.dl.Unlock()
 	m.dll.Unlock()
 }
 
-func (m *${Model}Map) GRLock() {
+func (m *${Model}Map) gRLock() {
 	m.l.RLock()
 	m.wl.RLock()
 	m.dl.RLock()
 	m.dll.RLock()
 }
-func (m *${Model}Map) GRUnlock() {
+func (m *${Model}Map) gRUnlock() {
 	m.l.RUnlock()
 	m.wl.RUnlock()
 	m.dl.RUnlock()
@@ -171,9 +197,9 @@ func (m *${Model}Map) GRUnlock() {
 }
 
 func (m *${Model}Map) IsBusy() bool {
-	m.GRLock()
+	m.gRLock()
 
-	defer m.GRUnlock()
+	defer m.gRUnlock()
 
 	return m.mode == ${MODEL}_M_BUSY
 }
@@ -221,6 +247,9 @@ func (m *${Model}Map) Set(key string, value ${Model}) {
 	}
 }
 
+// set,del,setnx,setex will increase map.offset.
+// When offset reaches max int64 value, will be back to 0
+// So to judege values former or latter, should compare v.execAt first and then comapre offset.
 func (m *${Model}Map) offsetIncr() int64 {
 	atomic.AddInt64(&m.offset, 1)
 	atomic.CompareAndSwapInt64(&m.offset, math.MaxInt64, 0)
@@ -229,6 +258,7 @@ func (m *${Model}Map) offsetIncr() int64 {
 
 // map.SetEX
 // key-value will be put with expired time limit.
+// If seconds are set -1, value will not be expired
 // expired keys will be deleted as soon as calling m.Get(key), or calling m.ClearExpireKeys()
 func (m *${Model}Map) SetEx(key string, value ${Model}, seconds int) {
 	ext := time.Now().UnixNano()
@@ -344,7 +374,7 @@ func (m *${Model}Map) Delete(key string) {
 		m.dll.Lock()
 		m.del[key] = ${Model}Value{
 			exp: 0,
-			v:  ${Model}{},
+			v:   ${Model}{},
 
 			execAt: ext,
 			offset: offset,
@@ -370,7 +400,7 @@ func (m *${Model}Map) Detail() ${model}MapView {
 		flag++
 		mv.M[k] = m.m[k].detail()
 		if flag > listMaxNum {
-			mv.M["reach-max-detail"] = "end"
+			mv.M["reach-max-detail"] = ${Model}{}
 			break
 		}
 	}
@@ -382,7 +412,7 @@ func (m *${Model}Map) Detail() ${model}MapView {
 		mv.Dirty[k] = m.dirty[k].detail()
 		flag++
 		if flag > listMaxNum {
-			mv.Dirty["reach-max-detail"] = "end"
+			mv.Dirty["reach-max-detail"] = ${Model}{}
 			break
 		}
 	}
@@ -394,7 +424,7 @@ func (m *${Model}Map) Detail() ${model}MapView {
 		mv.Write[k] = m.write[k].detail()
 		flag++
 		if flag > listMaxNum {
-			mv.Write["reach-max-detail"] = "end"
+			mv.Write["reach-max-detail"] =${Model}{}
 			break
 		}
 	}
@@ -406,7 +436,7 @@ func (m *${Model}Map) Detail() ${model}MapView {
 		mv.Del[k] = m.del[k].detail()
 		flag++
 		if flag > listMaxNum {
-			mv.Del["reach-max-detail"] = "end"
+			mv.Del["reach-max-detail"] = ${Model}{}
 			break
 		}
 	}
@@ -448,32 +478,23 @@ func ${model}GetFrom(l *sync.RWMutex, m map[string]${Model}Value, key string) ${
 }
 
 func (m *${Model}Map) setBusy() {
-	m.l.Lock()
-	defer m.l.Unlock()
-	m.dl.Lock()
-	defer m.dl.Unlock()
-	m.wl.Lock()
-	defer m.wl.Unlock()
-
+	m.gLock()
 	m.mode = ${MODEL}_M_BUSY
+	m.gUnlock()
 }
 
 func (m *${Model}Map) setFree() {
-	m.l.Lock()
-	defer m.l.Unlock()
-	m.dl.Lock()
-	defer m.dl.Unlock()
-	m.wl.Lock()
-	defer m.wl.Unlock()
-
+	m.gLock()
 	m.mode = ${MODEL}_M_FREE
+	m.gUnlock()
 }
 
 // Returns Map.m real length, not m.dirty or m.write.
 func (m *${Model}Map) Len() int {
 	m.l.RLock()
-	defer m.l.RUnlock()
-	return len(m.m)
+	length := len(m.m)
+	m.l.RUnlock()
+	return length
 }
 
 // ClearExpireKeys clear expired keys, and it will not influence map write and read.
@@ -491,45 +512,73 @@ func (m *${Model}Map) ClearExpireKeys() int {
 	n := m.clearExpireKeys()
 
 	// sync new writen data from Map.write
-	m.l.Lock()
-
+	var tmp = make(map[string]${Model}Value)
 	m.wl.Lock()
 	for k, v := range m.write {
-		m.m[k] = v
+		tmp[k] = v
 	}
 	m.write = make(map[string]${Model}Value)
 	m.wl.Unlock()
 
+	m.l.Lock()
+	for k, v := range tmp {
+		m.m[k] = v
+	}
+	m.l.Unlock()
+
 	// sync deleted operation from Map.del
+	tmp = make(map[string]${Model}Value)
+
 	m.dll.Lock()
+
 	for k, v := range m.del {
-		v2, ok := m.m[k]
-		if !ok {
-			delete(m.del, k)
-			continue
-		}
-		if v.LatterThan(v2) {
-			delete(m.del, k)
-			delete(m.m, k)
-		}
+		tmp[k] = v
 	}
 	m.del = make(map[string]${Model}Value)
 	m.dll.Unlock()
 
+	m.l.Lock()
+	for k, v := range tmp {
+		v2, ok := m.m[k]
+		if !ok {
+			continue
+		}
+		if v.LatterThan(v2) {
+			delete(m.m, k)
+		}
+	}
 	m.l.Unlock()
 
-	m.dl.Lock()
-	m.dirty = make(map[string]${Model}Value)
+	tmp = make(map[string]${Model}Value)
 
 	m.l.RLock()
-	for key, _ := range m.m {
-		m.dirty[key] = m.m[key]
+	for k, v := range m.m {
+		tmp[k] = v
 	}
 	m.l.RUnlock()
+
+	// When migrating data from m to drity, since while tmp is coping from m.m, m.m and m.dirty are still writable, tmp is relatively old.
+	// So make sure data from old m.m's copied tmp will not influence latest writened data in dirty.
+	m.dl.Lock()
+	m.dirty = make(map[string]${Model}Value)
+	for k, v := range tmp {
+		v2, ok := m.dirty[k]
+		if ok && v2.LatterThan(v) {
+			// make sure existed latest writen data will not be replaced by the old
+			continue
+		} else {
+			// replace old data
+			m.dirty[k] = v
+		}
+	}
 	m.dl.Unlock()
 
 	return n
 }
+
+// Change to busy mode, now dirty provides read, write provides write, del provides delete.
+// After clear expired keys in m, m will change into free auto..ly.
+// in free mode, m.del and m.write will not provides read nor write, m.dirty will not read.
 func (m *${Model}Map) clearExpireKeys() int {
 	m.setBusy()
 	defer m.setFree()

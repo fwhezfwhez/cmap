@@ -1,11 +1,13 @@
 package cmap
+
 import (
 	"fmt"
 	"strings"
 	"testing"
 )
+
 func TestGenerateTypeSyncMap(t *testing.T) {
-	fmt.Println(GenerateTypeSyncMap("User", map[string]string{
+	fmt.Println(GenerateTypeSyncMap("Teacher", map[string]string{
 		"${package_name}": "model",
 	}))
 }
@@ -21,8 +23,8 @@ func TestReplace(t *testing.T) {
 
 	fmt.Println(replace(r, map[string]string{
 		"${package_name}": "model",
-		"${Model}":"User",
-		"${model}": "user",
-		"${MODEL}": "USER",
+		"${Model}":        "User",
+		"${model}":        "user",
+		"${MODEL}":        "USER",
 	}))
 }

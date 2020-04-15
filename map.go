@@ -9,19 +9,21 @@ import (
 	"time"
 )
 
+// value saved
 type Value struct {
 	// value
 	v interface{}
-	// expire_in, -1-no time limit
+	// value will be expired in exp seconds, -1 means no time limit
 	exp int64
 
-	// Map's offset, when map exec set/delete offset++
+	// Map's offset, when map exec set/delete, offset++
 	offset int64
-	// exec time unixnano
+	// generated time when a value is set, unixnano
 	execAt int64
 }
 
 // v is latter than v2 in time
+// LatterThan helps judge set/del/sync make sense or not
 func (v Value) LatterThan(v2 Value) bool {
 	if v.execAt > v2.execAt {
 		return true
@@ -45,6 +47,7 @@ func (v Value) FormerThan(v2 Value) bool {
 	return v.offset < v2.offset
 }
 
+// make value readable
 func (v Value) detail() map[string]interface{} {
 	m := map[string]interface{}{
 		"v":       v.v,
@@ -55,14 +58,30 @@ func (v Value) detail() map[string]interface{} {
 	return m
 }
 
+// M_FREE and M_BUSY are signal of map.m state.
+// When map.mode == M_FREE, data are writable and readable using map.m.
+// When map.mode == M_BUSY, data are writable and readble using map.dirty, writable map.write and writable map.del
 const (
 	M_FREE = 0
 	M_BUSY = 1
 )
 
+// Map is concurrently safe, and faster than sync.Map.
+// Map consist of m, dirty, write, del, these 4 data register.
+// In M_FREE mode, map.m is writable/readable to users.
+// When calling map.ClearExpireKeys(), map will change mode into M_BUSY.
+// In B_BUSY mode, map.m is unreadable and unwritable. users read data from dirty.
+// At this moment,
+//    writing operation will write data to map.dirty, map.write
+//    deleting operation will write to map.del
+// As soon as clearing job done, mode set to M_FREE,
+// At this moment,
+//    map.m is return to job, writed and read
+//    map.write change to read-only and data in m.write will be sync to map.m then cleared
+//    map.del change to read-only and data in m.del will sync to map.m then cleared
+//    map.dirty are first be cleared and then synchronizing data from map.m and block new write request, after sync job done, finish all writing request.
 type Map struct {
 	mode int
-	gl   *sync.RWMutex
 
 	l *sync.RWMutex
 	m map[string]Value
@@ -79,6 +98,8 @@ type Map struct {
 }
 
 // Help viewing map's detail.
+//   b, e:= json.MarshalIndent(m.Detail(), "", "  ")
+//   fmt.Println(string(b))
 type mapView struct {
 	Mode int
 
@@ -95,8 +116,6 @@ type mapView struct {
 func newMap() *Map {
 	return &Map{
 		mode: M_FREE,
-
-		gl: &sync.RWMutex{},
 
 		l: &sync.RWMutex{},
 		m: make(map[string]Value),
@@ -116,26 +135,31 @@ func newMap() *Map {
 func NewMap() *Map {
 	return newMap()
 }
-func (m *Map) GLock() {
+
+// Pause the world
+// gLock and gUnlock must run in pair
+func (m *Map) gLock() {
 	m.l.Lock()
 	m.wl.Lock()
 	m.dl.Lock()
 	m.dll.Lock()
 }
-func (m *Map) GUnlock() {
+
+// Continue
+func (m *Map) gUnlock() {
 	m.l.Unlock()
 	m.wl.Unlock()
 	m.dl.Unlock()
 	m.dll.Unlock()
 }
 
-func (m *Map) GRLock() {
+func (m *Map) gRLock() {
 	m.l.RLock()
 	m.wl.RLock()
 	m.dl.RLock()
 	m.dll.RLock()
 }
-func (m *Map) GRUnlock() {
+func (m *Map) gRUnlock() {
 	m.l.RUnlock()
 	m.wl.RUnlock()
 	m.dl.RUnlock()
@@ -143,9 +167,9 @@ func (m *Map) GRUnlock() {
 }
 
 func (m *Map) IsBusy() bool {
-	m.GRLock()
+	m.gRLock()
 
-	defer m.GRUnlock()
+	defer m.gRUnlock()
 
 	return m.mode == M_BUSY
 }
@@ -193,6 +217,9 @@ func (m *Map) Set(key string, value interface{}) {
 	}
 }
 
+// set,del,setnx,setex will increase map.offset.
+// When offset reaches max int64 value, will be back to 0
+// So to judege values former or latter, should compare v.execAt first and then comapre offset.
 func (m *Map) offsetIncr() int64 {
 	atomic.AddInt64(&m.offset, 1)
 	atomic.CompareAndSwapInt64(&m.offset, math.MaxInt64, 0)
@@ -201,6 +228,7 @@ func (m *Map) offsetIncr() int64 {
 
 // map.SetEX
 // key-value will be put with expired time limit.
+// If seconds are set -1, value will not be expired
 // expired keys will be deleted as soon as calling m.Get(key), or calling m.ClearExpireKeys()
 func (m *Map) SetEx(key string, value interface{}, seconds int) {
 	ext := time.Now().UnixNano()
@@ -420,15 +448,15 @@ func getFrom(l *sync.RWMutex, m map[string]Value, key string) interface{} {
 }
 
 func (m *Map) setBusy() {
-	m.GLock()
+	m.gLock()
 	m.mode = M_BUSY
-	m.GUnlock()
+	m.gUnlock()
 }
 
 func (m *Map) setFree() {
-	m.GLock()
+	m.gLock()
 	m.mode = M_FREE
-	m.GUnlock()
+	m.gUnlock()
 }
 
 // Returns Map.m real length, not m.dirty or m.write.

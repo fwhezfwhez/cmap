@@ -62,6 +62,7 @@ const (
 
 type Map struct {
 	mode int
+	gl   *sync.RWMutex
 
 	l *sync.RWMutex
 	m map[string]Value
@@ -94,8 +95,11 @@ type mapView struct {
 func newMap() *Map {
 	return &Map{
 		mode: M_FREE,
-		l:    &sync.RWMutex{},
-		m:    make(map[string]Value),
+
+		gl: &sync.RWMutex{},
+
+		l: &sync.RWMutex{},
+		m: make(map[string]Value),
 
 		dl:    &sync.RWMutex{},
 		dirty: make(map[string]Value),
@@ -416,32 +420,23 @@ func getFrom(l *sync.RWMutex, m map[string]Value, key string) interface{} {
 }
 
 func (m *Map) setBusy() {
-	m.l.Lock()
-	defer m.l.Unlock()
-	m.dl.Lock()
-	defer m.dl.Unlock()
-	m.wl.Lock()
-	defer m.wl.Unlock()
-
+	m.GLock()
 	m.mode = M_BUSY
+	m.GUnlock()
 }
 
 func (m *Map) setFree() {
-	m.l.Lock()
-	defer m.l.Unlock()
-	m.dl.Lock()
-	defer m.dl.Unlock()
-	m.wl.Lock()
-	defer m.wl.Unlock()
-
+	m.GLock()
 	m.mode = M_FREE
+	m.GUnlock()
 }
 
 // Returns Map.m real length, not m.dirty or m.write.
 func (m *Map) Len() int {
 	m.l.RLock()
-	defer m.l.RUnlock()
-	return len(m.m)
+	length := len(m.m)
+	m.l.RUnlock()
+	return length
 }
 
 // ClearExpireKeys clear expired keys, and it will not influence map write and read.
@@ -459,45 +454,73 @@ func (m *Map) ClearExpireKeys() int {
 	n := m.clearExpireKeys()
 
 	// sync new writen data from Map.write
-	m.l.Lock()
-
+	var tmp = make(map[string]Value)
 	m.wl.Lock()
 	for k, v := range m.write {
-		m.m[k] = v
+		tmp[k] = v
 	}
 	m.write = make(map[string]Value)
 	m.wl.Unlock()
 
+	m.l.Lock()
+	for k, v := range tmp {
+		m.m[k] = v
+	}
+	m.l.Unlock()
+
 	// sync deleted operation from Map.del
+	tmp = make(map[string]Value)
+
 	m.dll.Lock()
+
 	for k, v := range m.del {
-		v2, ok := m.m[k]
-		if !ok {
-			delete(m.del, k)
-			continue
-		}
-		if v.LatterThan(v2) {
-			delete(m.del, k)
-			delete(m.m, k)
-		}
+		tmp[k] = v
 	}
 	m.del = make(map[string]Value)
 	m.dll.Unlock()
 
+	m.l.Lock()
+	for k, v := range tmp {
+		v2, ok := m.m[k]
+		if !ok {
+			continue
+		}
+		if v.LatterThan(v2) {
+			delete(m.m, k)
+		}
+	}
 	m.l.Unlock()
 
-	m.dl.Lock()
-	m.dirty = make(map[string]Value)
+	tmp = make(map[string]Value)
 
 	m.l.RLock()
-	for key, _ := range m.m {
-		m.dirty[key] = m.m[key]
+	for k, v := range m.m {
+		tmp[k] = v
 	}
 	m.l.RUnlock()
+
+	// When migrating data from m to drity, since while tmp is coping from m.m, m.m and m.dirty are still writable, tmp is relatively old.
+	// So make sure data from old m.m's copied tmp will not influence latest writened data in dirty.
+	m.dl.Lock()
+	m.dirty = make(map[string]Value)
+	for k, v := range tmp {
+		v2, ok := m.dirty[k]
+		if ok && v2.LatterThan(v) {
+			// make sure existed latest writen data will not be replaced by the old
+			continue
+		} else {
+			// replace old data
+			m.dirty[k] = v
+		}
+	}
 	m.dl.Unlock()
 
 	return n
 }
+
+// Change to busy mode, now dirty provides read, write provides write, del provides delete.
+// After clear expired keys in m, m will change into free auto..ly.
+// in free mode, m.del and m.write will not provides read nor write, m.dirty will not read.
 func (m *Map) clearExpireKeys() int {
 	m.setBusy()
 	defer m.setFree()

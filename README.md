@@ -28,11 +28,26 @@ cmap is a concurrently safe map in golang. Providing apis below:
 ## Comparing with sync.map
 | cases | cmap | sync.map | url |
 |-----------| --- | --- |------ |
-| GET | 500000,3483 ns/op,5399 B/op,3 allocs/op | 200000,5359 ns/op,5399 B/op,3 allocs/op | [cmap.Get](https://github.com/fwhezfwhez/cmap/blob/3ea97e6c5de723adc78aa8469c7be61186754c04/map_test.go#L280)<br>[sync.Get](https://github.com/fwhezfwhez/cmap/blob/3ea97e6c5de723adc78aa8469c7be61186754c04/map_test.go#L296)|
-| SET | 300000,4273 ns/op,6434 B/op,40 allocs/op | 300000,3833 ns/op,6464 B/op,42 allocs/op | ... |
+| GET-benchmark-b.N | 5000000,345 ns/op,24 B/op,1 allocs/op |  3000000,347 ns/op,24 B/op,2 allocs/op | [cmap.Get](https://github.com/fwhezfwhez/cmap/blob/3ea97e6c5de723adc78aa8469c7be61186754c04/map_test.go#L280)<br>[sync.Get](https://github.com/fwhezfwhez/cmap/blob/3ea97e6c5de723adc78aa8469c7be61186754c04/map_test.go#L296)|
+| GET-parallel-pb | 500000,3409 ns/op,5399 B/op,3 allocs/op |  200000,5359 ns/op,5399 B/op,3 allocs/op | [cmap.Get](https://github.com/fwhezfwhez/cmap/blob/3ea97e6c5de723adc78aa8469c7be61186754c04/map_test.go#L280)<br>[sync.Get](https://github.com/fwhezfwhez/cmap/blob/3ea97e6c5de723adc78aa8469c7be61186754c04/map_test.go#L296)|
+| SET-benchmark-b.N | 1000000,1820 ns/op,617,B/op 5 allocs/op | 1000000,1931 ns/op,243 B/op,9 allocs/op | [cmap.Get](https://github.com/fwhezfwhez/cmap/blob/3ea97e6c5de723adc78aa8469c7be61186754c04/map_test.go#L280)<br>[sync.Get](https://github.com/fwhezfwhez/cmap/blob/3ea97e6c5de723adc78aa8469c7be61186754c04/map_test.go#L296)|
+| SET-parallel-pb | 500000,4020 ns/op,6434 B/op,40 allocs/op |  500000,4100 ns/op,6464 B/op,42 allocs/op | [cmap.Get](https://github.com/fwhezfwhez/cmap/blob/3ea97e6c5de723adc78aa8469c7be61186754c04/map_test.go#L280)<br>[sync.Get](https://github.com/fwhezfwhez/cmap/blob/3ea97e6c5de723adc78aa8469c7be61186754c04/map_test.go#L296)|
 
+## Analysis
 
 ## Auto-generate
+
+mode: M_FREE
+| .. | m.m | m.dirty | m.write | m.del |
+| --- | --- | --- |------ |
+| read | yes | no | no | no |
+| write| yes | yes | no | no |
+
+mode: M_BUSY
+| x=mem(m.m, m.dirty, m.write, m.del) <br> y=-state(readable, writable) | m.m | m.dirty | m.write | m.del |
+| --- | --- | --- |------ |
+| read | no | yes | no | no |
+| write| no | yes | yes | yes |
 
 cmap provides auto-generate api to generate a type-defined map.It will save cost of assertion while using interface{}
 ```go

@@ -203,6 +203,8 @@ func TestDelete(t *testing.T) {
 	fmt.Println(string(b))
 }
 
+// go test -benchmem -run=^$ cmap -bench ^(BenchmarkMapSet)$
+// BenchmarkMapSet-4   	 1000000	      1820 ns/op	     617 B/op	       5 allocs/op
 func BenchmarkMapSet(b *testing.B) {
 	m := newMap()
 	for i := 0; i < b.N; i++ {
@@ -210,6 +212,8 @@ func BenchmarkMapSet(b *testing.B) {
 	}
 }
 
+// go test -benchmem -run=^$ cmap -bench ^(BenchmarkSyncMapSet)$
+// BenchmarkSyncMapSet-4   	 1000000	      1931 ns/op	     243 B/op	       9 allocs/op
 func BenchmarkSyncMapSet(b *testing.B) {
 	m := sync.Map{}
 
@@ -218,6 +222,8 @@ func BenchmarkSyncMapSet(b *testing.B) {
 	}
 }
 
+// BenchmarkMapGet-4   	 5000000	       345 ns/op	      24 B/op	       1 allocs/op
+// go test -benchmem -run=^$ cmap -bench ^(BenchmarkMapGet)$
 func BenchmarkMapGet(b *testing.B) {
 	m := newMap()
 	for i := 0; i < 1000000; i++ {
@@ -246,7 +252,7 @@ func BenchmarkSyncMapGet(b *testing.B) {
 	}
 }
 
-// BenchmarkMapSetParallel-4   	  300000	      4273 ns/op	    6434 B/op	      40 allocs/op
+// BenchmarkMapSetParallel-4   	  500000	      4020 ns/op	    6434 B/op	      40 allocs/op
 // go test -benchmem -run=^$ cmap -bench ^(BenchmarkMapSetParallel)$
 func BenchmarkMapSetParallel(b *testing.B) {
 	m := newMap()
@@ -260,7 +266,7 @@ func BenchmarkMapSetParallel(b *testing.B) {
 	})
 }
 
-// BenchmarkSyncMapSetParallel-4   	  300000	      3833 ns/op	    6464 B/op	      42 allocs/op
+// BenchmarkSyncMapSetParallel-4   	  500000	      4100 ns/op	    6464 B/op	      42 allocs/op
 // test -benchmem -run=^$ cmap -bench ^(BenchmarkSyncMapSetParallel)$
 func BenchmarkSyncMapSetParallel(b *testing.B) {
 	m := sync.Map{}
@@ -274,7 +280,7 @@ func BenchmarkSyncMapSetParallel(b *testing.B) {
 	})
 }
 
-// BenchmarkMapGetParallel-4   	  500000	      3483 ns/op	    5399 B/op	       3 allocs/op
+// BenchmarkMapGetParallel-4   	  500000	      3409 ns/op	    5399 B/op	       3 allocs/op
 // go test -benchmem -run=^$ cmap -bench ^(BenchmarkMapGetParallel)$
 func BenchmarkMapGetParallel(b *testing.B) {
 	m := newMap()

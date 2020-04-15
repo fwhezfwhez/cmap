@@ -1,6 +1,6 @@
-<p align="center">
+<center>
 <font size=72>cmap</font>
-</p>
+</center>
 
 <p align="center">
     <a href="https://godoc.org/github.com/fwhezfwhez/cmap"><img src="http://img.shields.io/badge/godoc-reference-blue.svg?style=flat"></a>

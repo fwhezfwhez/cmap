@@ -54,7 +54,6 @@ func TestMap2(t *testing.T) {
 			m.ClearExpireKeys()
 		}(i)
 	}
-	fmt.Println(m.m["username"])
 	time.Sleep(7 * time.Second)
 	m.PrintDetail()
 }

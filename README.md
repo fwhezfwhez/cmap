@@ -1,3 +1,13 @@
+<p align="center">
+# cmap
+</p>
+
+<p align="center">
+    <a href="https://godoc.org/github.com/fwhezfwhez/cmap"><img src="http://img.shields.io/badge/godoc-reference-blue.svg?style=flat"></a>
+    <a href="https://www.travis-ci.org/fwhezfwhez/cmap"><img src="https://www.travis-ci.org/fwhezfwhez/cmap.svg?branch=master"></a>
+    <a href="https://codecov.io/gh/fwhezfwhez/cmap"><img src="https://codecov.io/gh/fwhezfwhez/cmap/branch/master/graph/badge.svg"></a>
+</p>
+
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
 **Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
@@ -7,14 +17,6 @@
   - [Auto-generate](#auto-generate)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
-
-# cmap
-
-<p align="center">
-    <a href="https://godoc.org/github.com/fwhezfwhez/cmap"><img src="http://img.shields.io/badge/godoc-reference-blue.svg?style=flat"></a>
-    <a href="https://www.travis-ci.org/fwhezfwhez/cmap"><img src="https://www.travis-ci.org/fwhezfwhez/cmap.svg?branch=master"></a>
-    <a href="https://codecov.io/gh/fwhezfwhez/cmap"><img src="https://codecov.io/gh/fwhezfwhez/cmap/branch/master/graph/badge.svg"></a>
-</p>
 
 
 cmap is a concurrently safe map in golang. Providing apis below:

@@ -10,8 +10,8 @@ cmap is a concurrently safe map in golang. Providing apis below:
 ## Comparing with sync.map
 | cases | cmap | sync.map | url |
 |-----------| --- | --- |------ |
-| GET | emm | ummm | [click to location](https://github.com/fwhezfwhez/tcpx/blob/9c70f4bd5a0042932728ed44681ff70d6a22f7e3/benchmark_test.go#L9) |
-| SET | emmm | ummm | 1368 B/op | 5 allocs/op| [click to location](https://github.com/fwhezfwhez/tcpx/blob/9c70f4bd5a0042932728ed44681ff70d6a22f7e3/benchmark_test.go#L17) |
+| GET | 500000,3483 ns/op,5399 B/op,3 allocs/op | 200000,5359 ns/op,5399 B/op,3 allocs/op | [click to location](https://github.com/fwhezfwhez/tcpx/blob/9c70f4bd5a0042932728ed44681ff70d6a22f7e3/benchmark_test.go#L9) |
+| SET |  3000000,4273 ns/op,6434 B/op,40 allocs/op | 300000,3833 ns/op,6464 B/op,42 allocs/op | [click to location](https://github.com/fwhezfwhez/tcpx/blob/9c70f4bd5a0042932728ed44681ff70d6a22f7e3/benchmark_test.go#L17) |
 
 
 ## Auto-generate

@@ -28,10 +28,10 @@ cmap is a concurrently safe map in golang. Providing apis below:
 ## Comparing with sync.map
 | cases | cmap | sync.map | url |
 |-----------| --- | --- |------ |
-| GET-benchmark-b.N | 5000000,345 ns/op,24 B/op,1 allocs/op |  3000000,347 ns/op,24 B/op,2 allocs/op | [cmap.Get](https://github.com/fwhezfwhez/cmap/blob/3ea97e6c5de723adc78aa8469c7be61186754c04/map_test.go#L280)<br>[sync.Get](https://github.com/fwhezfwhez/cmap/blob/3ea97e6c5de723adc78aa8469c7be61186754c04/map_test.go#L296)|
-| GET-parallel-pb | 500000,3409 ns/op,5399 B/op,3 allocs/op |  200000,5359 ns/op,5399 B/op,3 allocs/op | [cmap.Get](https://github.com/fwhezfwhez/cmap/blob/3ea97e6c5de723adc78aa8469c7be61186754c04/map_test.go#L280)<br>[sync.Get](https://github.com/fwhezfwhez/cmap/blob/3ea97e6c5de723adc78aa8469c7be61186754c04/map_test.go#L296)|
-| SET-benchmark-b.N | 1000000,1820 ns/op,617,B/op 5 allocs/op | 1000000,1931 ns/op,243 B/op,9 allocs/op | [cmap.Get](https://github.com/fwhezfwhez/cmap/blob/3ea97e6c5de723adc78aa8469c7be61186754c04/map_test.go#L280)<br>[sync.Get](https://github.com/fwhezfwhez/cmap/blob/3ea97e6c5de723adc78aa8469c7be61186754c04/map_test.go#L296)|
-| SET-parallel-pb | 500000,4020 ns/op,6434 B/op,40 allocs/op |  500000,4100 ns/op,6464 B/op,42 allocs/op | [cmap.Get](https://github.com/fwhezfwhez/cmap/blob/3ea97e6c5de723adc78aa8469c7be61186754c04/map_test.go#L280)<br>[sync.Get](https://github.com/fwhezfwhez/cmap/blob/3ea97e6c5de723adc78aa8469c7be61186754c04/map_test.go#L296)|
+| GET-benchmark-b.N | 5000000,345 ns/op,24 B/op,1 allocs/op |  3000000,347 ns/op,24 B/op,2 allocs/op | [cmap](https://github.com/fwhezfwhez/cmap/blob/aabf39042164d251011b20273a2ccba7639df915/map_test.go#L227)<br>[sync.map](https://github.com/fwhezfwhez/cmap/blob/aabf39042164d251011b20273a2ccba7639df915/map_test.go#L242)|
+| GET-parallel-pb | 500000,3409 ns/op,5399 B/op,3 allocs/op |  200000,5359 ns/op,5399 B/op,3 allocs/op | [cmap](https://github.com/fwhezfwhez/cmap/blob/aabf39042164d251011b20273a2ccba7639df915/map_test.go#L285)<br>[sync.map](https://github.com/fwhezfwhez/cmap/blob/aabf39042164d251011b20273a2ccba7639df915/map_test.go#L303)|
+| SET-benchmark-b.N | 1000000,1820 ns/op,617,B/op 5 allocs/op | 1000000,1931 ns/op,243 B/op,9 allocs/op | [cmap](https://github.com/fwhezfwhez/cmap/blob/aabf39042164d251011b20273a2ccba7639df915/map_test.go#L208)<br>[sync.map](https://github.com/fwhezfwhez/cmap/blob/aabf39042164d251011b20273a2ccba7639df915/map_test.go#L217)|
+| SET-parallel-pb | 500000,4020 ns/op,6434 B/op,40 allocs/op |  500000,4100 ns/op,6464 B/op,42 allocs/op | [cmap](https://github.com/fwhezfwhez/cmap/blob/aabf39042164d251011b20273a2ccba7639df915/map_test.go#L257)<br>[sync.map](https://github.com/fwhezfwhez/cmap/blob/aabf39042164d251011b20273a2ccba7639df915/map_test.go#L271)|
 
 ## Analysis
 

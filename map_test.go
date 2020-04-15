@@ -55,7 +55,7 @@ func TestMap2(t *testing.T) {
 		}(i)
 	}
 	fmt.Println(m.m["username"])
-	time.Sleep(10 * time.Second)
+	time.Sleep(7 * time.Second)
 	m.PrintDetail()
 }
 
@@ -99,7 +99,7 @@ func TestWRCMap(t *testing.T) {
 		}(i)
 	}
 
-	time.Sleep(10 * time.Second)
+	time.Sleep(5 * time.Second)
 
 	for i := 0; i < 100; i++ {
 		go func(i int) {
@@ -152,7 +152,7 @@ func TestWRCMap(t *testing.T) {
 		}(i)
 	}
 	select {
-	case <-time.After(10 * time.Second):
+	case <-time.After(7 * time.Second):
 		return
 	}
 }

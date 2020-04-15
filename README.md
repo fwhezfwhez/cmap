@@ -1,3 +1,13 @@
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
+
+- [cmap](#cmap)
+  - [Comparing with sync.map](#comparing-with-syncmap)
+  - [Auto-generate](#auto-generate)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 # cmap
 
 cmap is a concurrently safe map in golang. Providing apis below:
@@ -10,29 +20,14 @@ cmap is a concurrently safe map in golang. Providing apis below:
 ## Comparing with sync.map
 | cases | cmap | sync.map | url |
 |-----------| --- | --- |------ |
-| GET | 500000,3483 ns/op,5399 B/op,3 allocs/op | 200000,5359 ns/op,5399 B/op,3 allocs/op | [click to location](https://github.com/fwhezfwhez/tcpx/blob/9c70f4bd5a0042932728ed44681ff70d6a22f7e3/benchmark_test.go#L9) |
-| SET |  3000000,4273 ns/op,6434 B/op,40 allocs/op | 300000,3833 ns/op,6464 B/op,42 allocs/op | [click to location](https://github.com/fwhezfwhez/tcpx/blob/9c70f4bd5a0042932728ed44681ff70d6a22f7e3/benchmark_test.go#L17) |
+| GET | 500000,3483 ns/op,5399 B/op,3 allocs/op | 200000,5359 ns/op,5399 B/op,3 allocs/op | [cmap.Get-click to location](https://github.com/fwhezfwhez/cmap/blob/3ea97e6c5de723adc78aa8469c7be61186754c04/map_test.go#L280) ,[sync.Get-click to location](https://github.com/fwhezfwhez/cmap/blob/3ea97e6c5de723adc78aa8469c7be61186754c04/map_test.go#L296)|
+| SET | 300000,4273 ns/op,6434 B/op,40 allocs/op | 300000,3833 ns/op,6464 B/op,42 allocs/op | ... |
 
 
 ## Auto-generate
 
 cmap provides auto-generate api to generate a type-defined map.It will save cost of assertion while using interface{}
 
-```go
-package main
-
-import (
-    "fmt"
-    "github.com/fwhezfwhez/cmap"
-)
-func main(){
-    fmt.Println(cmap.GenerateTypeSyncMap("User", map[string]string{
-		"${package_name}": "model",
-	}))
-}
-```
-
-生成:
 ```go
 package model
 
@@ -45,6 +40,27 @@ import (
         "time"
 )
 
+// Auto-generate by github.com/fwhezfwhez/cmap.GenerateTypeSyncMap()
+// Note:
+// You might put this auto-genereted file to the package where User{} is defined.
+// How to use this auto-generate concurrently-safe UserMap?
+/*
+        var user User
+        m := NewUserMap()
+        m.Set(fmt.Sprintf("%d", user.UserId), user)
+        _ = m.Get(fmt.Sprintf("%d", user.UserId))
+        m.Delete(fmt.Sprintf("%d", user.UserId))
+        m.SetEx(fmt.Sprintf("%d", user.UserId), user, 3*24*60*60)
+*/
+// And you can supervisor it by:
+/*
+    go func(){
+                for {
+                        m.ClearExpireKeys()
+                        time.Sleep(24 * time.Hour)
+                }
+        }()
+*/
 type UserValue struct {
         //
         IsNil bool
@@ -563,4 +579,5 @@ func (m *UserMap) clearExpireKeys() int {
         m.l.Unlock()
         return num
 }
+
 ```

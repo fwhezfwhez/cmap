@@ -18,6 +18,27 @@ import (
 	"time"
 )
 
+// Auto-generate by github.com/fwhezfwhez/cmap.GenerateTypeSyncMap()
+// Note:
+// You might put this auto-genereted file to the package where ${Model}{} is defined.
+// How to use this auto-generate concurrently-safe ${Model}Map?
+/*
+    var ${model} ${Model}
+    m := New${Model}Map()
+    m.Set(fmt.Sprintf("%d", ${model}.${Model}Id), ${model})
+    _ = m.Get(fmt.Sprintf("%d", ${model}.${Model}Id))
+    m.Delete(fmt.Sprintf("%d", ${model}.${Model}Id))
+    m.SetEx(fmt.Sprintf("%d", ${model}.${Model}Id), ${model}, 3*24*60*60)
+*/
+// And you can supervisor it by:
+/*
+    go func(){
+		for {
+			m.ClearExpireKeys()
+			time.Sleep(24 * time.Hour)
+		}
+	}()
+*/
 type ${Model}Value struct {
 	//
 	IsNil bool

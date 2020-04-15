@@ -1,5 +1,5 @@
 <p align="center">
-<font face="黑体" color=red size=72>cmap</font>
+<font size=72>cmap</font>
 </p>
 
 <p align="center">

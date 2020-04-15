@@ -28,7 +28,7 @@ cmap is a concurrently safe map in golang. Providing apis below:
 ## Comparing with sync.map
 | cases | cmap | sync.map | url |
 |-----------| --- | --- |------ |
-| GET | 500000,3483 ns/op,5399 B/op,3 allocs/op | 200000,5359 ns/op,5399 B/op,3 allocs/op | [cmap.Get-click to location](https://github.com/fwhezfwhez/cmap/blob/3ea97e6c5de723adc78aa8469c7be61186754c04/map_test.go#L280)<br>[sync.Get-click to location](https://github.com/fwhezfwhez/cmap/blob/3ea97e6c5de723adc78aa8469c7be61186754c04/map_test.go#L296)|
+| GET | 500000,3483 ns/op,5399 B/op,3 allocs/op | 200000,5359 ns/op,5399 B/op,3 allocs/op | [cmap.Get](https://github.com/fwhezfwhez/cmap/blob/3ea97e6c5de723adc78aa8469c7be61186754c04/map_test.go#L280)<br>[sync.Get](https://github.com/fwhezfwhez/cmap/blob/3ea97e6c5de723adc78aa8469c7be61186754c04/map_test.go#L296)|
 | SET | 300000,4273 ns/op,6434 B/op,40 allocs/op | 300000,3833 ns/op,6464 B/op,42 allocs/op | ... |
 
 

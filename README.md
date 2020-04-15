@@ -39,6 +39,8 @@ func main() {
 }
 ```
 
+Output:
+
 ```go
 package model
 

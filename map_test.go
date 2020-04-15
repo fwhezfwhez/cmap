@@ -24,7 +24,7 @@ func TestMap(t *testing.T) {
 	fmt.Println(m.Len())
 }
 
-func TestMap2(t *testing.T) {
+func TestDelete2(t *testing.T) {
 	m := newMap()
 	m.Set("username1", "fengtao")
 	m.SetEx("username", "fengtao", 5)

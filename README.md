@@ -34,21 +34,21 @@ cmap is a concurrently safe map in golang. Providing apis below:
 | SET-parallel-pb | 500000,4020 ns/op,6434 B/op,40 allocs/op |  500000,4100 ns/op,6464 B/op,42 allocs/op | [cmap](https://github.com/fwhezfwhez/cmap/blob/aabf39042164d251011b20273a2ccba7639df915/map_test.go#L257)<br>[sync.map](https://github.com/fwhezfwhez/cmap/blob/aabf39042164d251011b20273a2ccba7639df915/map_test.go#L271)|
 
 ## Analysis
-
-## Auto-generate
-
 mode: M_FREE
-| .. | m.m | m.dirty | m.write | m.del |
-| --- | --- | --- |------ |
+
+| x=mem(m.m, m.dirty, m.write, m.del) <br> y=-state(readable, writable) | m.m | m.dirty | m.write | m.del |
+| --- | --- | --- | --- |------ |
 | read | yes | no | no | no |
 | write| yes | yes | no | no |
 
 mode: M_BUSY
+
 | x=mem(m.m, m.dirty, m.write, m.del) <br> y=-state(readable, writable) | m.m | m.dirty | m.write | m.del |
-| --- | --- | --- |------ |
+| --- | --- | --- |-- | ---- |
 | read | no | yes | no | no |
 | write| no | yes | yes | yes |
 
+## Auto-generate
 cmap provides auto-generate api to generate a type-defined map.It will save cost of assertion while using interface{}
 ```go
 package main

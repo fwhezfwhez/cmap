@@ -27,6 +27,17 @@ cmap is a concurrently safe map in golang. Providing apis below:
 ## Auto-generate
 
 cmap provides auto-generate api to generate a type-defined map.It will save cost of assertion while using interface{}
+```go
+package main
+import(
+    "github.com/fwhezfwhez/cmap"
+    "fmt"
+)
+func main() {
+    content := cmap.GenerateTypeSyncMap()
+    fmt.Println(content)
+}
+```
 
 ```go
 package model
@@ -45,7 +56,9 @@ import (
 // You might put this auto-genereted file to the package where User{} is defined.
 // How to use this auto-generate concurrently-safe UserMap?
 /*
-        var user User
+        var user = User{
+            UserId: 10086,
+        }
         m := NewUserMap()
         m.Set(fmt.Sprintf("%d", user.UserId), user)
         _ = m.Get(fmt.Sprintf("%d", user.UserId))

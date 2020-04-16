@@ -31,33 +31,33 @@ GET-benchmark-b.N
 
 | cases | n | ns/op | B/ob | allocs/op | link |
 | ---- | --- | --- | -- | --- |----- |
-| cmap | 5000000 | 345 ns/op |24 B/op | 1 allocs/op | [cmap](https://github.com/fwhezfwhez/cmap/blob/aabf39042164d251011b20273a2ccba7639df915/map_test.go#L227) |
-| sync.map | 3000000 | 347 ns/op | 24 B/op | 2 allocs/op | [sync.map](https://github.com/fwhezfwhez/cmap/blob/aabf39042164d251011b20273a2ccba7639df915/map_test.go#L242) |
-| chan-map | 100000 |15670 ns/op | 6112 B/op | 14 allocs/op | [chan-map]() |
+| cmap | 5000000 | 345 ns/op |24 B/op | 1 allocs/op | [cmap](https://github.com/fwhezfwhez/cmap/blob/6df9dfc8a3c29eb19c0a72cbd7d3917185c5ecfa/map_test.go#L232) |
+| sync.map | 3000000 | 347 ns/op | 24 B/op | 2 allocs/op | [sync.map](https://github.com/fwhezfwhez/cmap/blob/6df9dfc8a3c29eb19c0a72cbd7d3917185c5ecfa/map_test.go#L247) |
+| chan-map | 100000 |15670 ns/op | 6112 B/op | 14 allocs/op | [chan-map](https://github.com/fwhezfwhez/cmap/blob/6df9dfc8a3c29eb19c0a72cbd7d3917185c5ecfa/chan-map_test.go#L56) |
 
 GET-parallel-pb
 
 | cases | n | ns/op | B/ob | allocs/op | link |
 | ---- | --- | --- | -- | --- |----- |
-| cmap | 500000 | 3409 ns/op | 5399 B/op | 3 allocs/op | [cmap](https://github.com/fwhezfwhez/cmap/blob/aabf39042164d251011b20273a2ccba7639df915/map_test.go#L227) |
-| sync.map | 200000 | 5359 ns/op | 5399 B/op | 3 allocs/op | [sync.map](https://github.com/fwhezfwhez/cmap/blob/aabf39042164d251011b20273a2ccba7639df915/map_test.go#L242) |
-| chan-map | 500000	| 5483 ns/op | 6111 B/op | 14 allocs/op | [chan-map]() |
+| cmap | 500000 | 3409 ns/op | 5399 B/op | 3 allocs/op | [cmap](https://github.com/fwhezfwhez/cmap/blob/6df9dfc8a3c29eb19c0a72cbd7d3917185c5ecfa/map_test.go#L290) |
+| sync.map | 200000 | 5359 ns/op | 5399 B/op | 3 allocs/op | [sync.map](https://github.com/fwhezfwhez/cmap/blob/6df9dfc8a3c29eb19c0a72cbd7d3917185c5ecfa/map_test.go#L308) |
+| chan-map | 500000	| 5483 ns/op | 6111 B/op | 14 allocs/op | [chan-map](https://github.com/fwhezfwhez/cmap/blob/6df9dfc8a3c29eb19c0a72cbd7d3917185c5ecfa/chan-map_test.go#L108) |
 
 SET-benchmark-b.N
 
 | cases | n | ns/op | B/ob | allocs/op | link |
 | ---- | --- | --- | -- | --- |----- |
-| cmap | 1000000 | 1820 ns/op | 617,B/op | 5 allocs/op | [cmap](https://github.com/fwhezfwhez/cmap/blob/aabf39042164d251011b20273a2ccba7639df915/map_test.go#L227) |
-| sync.map | 1000000 | 1931 ns/op | 243 B/op | 9 allocs/op | [sync.map](https://github.com/fwhezfwhez/cmap/blob/aabf39042164d251011b20273a2ccba7639df915/map_test.go#L242) |
-| chan-map | 500000	| 4140 ns/op | 1043 B/op | 14 allocs/op | [chan-map]() |
+| cmap | 1000000 | 1820 ns/op | 617,B/op | 5 allocs/op | [cmap](https://github.com/fwhezfwhez/cmap/blob/6df9dfc8a3c29eb19c0a72cbd7d3917185c5ecfa/map_test.go#L213) |
+| sync.map | 1000000 | 1931 ns/op | 243 B/op | 9 allocs/op | [sync.map](https://github.com/fwhezfwhez/cmap/blob/6df9dfc8a3c29eb19c0a72cbd7d3917185c5ecfa/map_test.go#L222) |
+| chan-map | 500000	| 4140 ns/op | 1043 B/op | 14 allocs/op | [chan-map](https://github.com/fwhezfwhez/cmap/blob/6df9dfc8a3c29eb19c0a72cbd7d3917185c5ecfa/chan-map_test.go#L40) |
 
 SET-parallel-pb
 
 | cases | n | ns/op | B/ob | allocs/op | link |
 | ---- | --- | --- | -- | --- |----- |
-| cmap | 500000 | 4020 ns/op | 6434 B/op | 40 allocs/op | [cmap](https://github.com/fwhezfwhez/cmap/blob/aabf39042164d251011b20273a2ccba7639df915/map_test.go#L227) |
-| sync.map | 500000 | 4100 ns/op | 6464 B/op | 42 allocs/op | [sync.map](https://github.com/fwhezfwhez/cmap/blob/aabf39042164d251011b20273a2ccba7639df915/map_test.go#L242) |
-| chan-map | 300000 | 6186 ns/op | 7164 B/op | 51 allocs/op | [chan-map]() |
+| cmap | 500000 | 4020 ns/op | 6434 B/op | 40 allocs/op | [cmap](https://github.com/fwhezfwhez/cmap/blob/6df9dfc8a3c29eb19c0a72cbd7d3917185c5ecfa/map_test.go#L262) |
+| sync.map | 500000 | 4100 ns/op | 6464 B/op | 42 allocs/op | [sync.map](https://github.com/fwhezfwhez/cmap/blob/6df9dfc8a3c29eb19c0a72cbd7d3917185c5ecfa/map_test.go#L276) |
+| chan-map | 300000 | 6186 ns/op | 7164 B/op | 51 allocs/op | [chan-map](https://github.com/fwhezfwhez/cmap/blob/6df9dfc8a3c29eb19c0a72cbd7d3917185c5ecfa/chan-map_test.go#L90) |
 
 ## Analysis
 mode: M_FREE

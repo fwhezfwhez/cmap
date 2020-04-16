@@ -337,6 +337,14 @@ func BenchmarkMapClearExpireKeys(b *testing.B) {
 		}
 	})
 }
+
+func TestMapClearExpireKey(t *testing.T) {
+	m := newMap()
+	for i := 0; i < 1000000; i++ {
+		m.Set(fmt.Sprintf("key-%d", i), i)
+	}
+	m.ClearExpireKeys()
+}
 func randomString(length int) string {
 	str := "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	var r *rand.Rand

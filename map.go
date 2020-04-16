@@ -147,10 +147,10 @@ func (m *Map) gLock() {
 
 // Continue
 func (m *Map) gUnlock() {
-	m.l.Unlock()
-	m.wl.Unlock()
-	m.dl.Unlock()
 	m.dll.Unlock()
+	m.dl.Unlock()
+	m.wl.Unlock()
+	m.l.Unlock()
 }
 
 func (m *Map) gRLock() {
@@ -481,34 +481,32 @@ func (m *Map) ClearExpireKeys() int {
 	// clear Map.m expired keys
 	n := m.clearExpireKeys()
 
-	// sync new writen data from Map.write
-	var tmp = make(map[string]Value)
-	m.wl.Lock()
+	m.l.Lock()
+
+	m.wl.RLock()
 	for k, v := range m.write {
-		tmp[k] = v
+		v2, ok := m.m[k]
+		if !ok {
+			m.m[k] = v
+		} else {
+			if v2.LatterThan(v) {
+				continue
+			}
+		}
 	}
+	m.wl.RUnlock()
+
+	m.wl.Lock()
 	m.write = make(map[string]Value)
 	m.wl.Unlock()
 
-	m.l.Lock()
-	for k, v := range tmp {
-		m.m[k] = v
-	}
 	m.l.Unlock()
 
 	// sync deleted operation from Map.del
-	tmp = make(map[string]Value)
+	m.l.Lock()
 
 	m.dll.Lock()
-
 	for k, v := range m.del {
-		tmp[k] = v
-	}
-	m.del = make(map[string]Value)
-	m.dll.Unlock()
-
-	m.l.Lock()
-	for k, v := range tmp {
 		v2, ok := m.m[k]
 		if !ok {
 			continue
@@ -517,21 +515,19 @@ func (m *Map) ClearExpireKeys() int {
 			delete(m.m, k)
 		}
 	}
+
+	m.del = make(map[string]Value)
+	m.dll.Unlock()
+
 	m.l.Unlock()
-
-	tmp = make(map[string]Value)
-
-	m.l.RLock()
-	for k, v := range m.m {
-		tmp[k] = v
-	}
-	m.l.RUnlock()
 
 	// When migrating data from m to drity, since while tmp is coping from m.m, m.m and m.dirty are still writable, tmp is relatively old.
 	// So make sure data from old m.m's copied tmp will not influence latest writened data in dirty.
+	m.l.RLock()
+
 	m.dl.Lock()
 	m.dirty = make(map[string]Value)
-	for k, v := range tmp {
+	for k, v := range m.m {
 		v2, ok := m.dirty[k]
 		if ok && v2.LatterThan(v) {
 			// make sure existed latest writen data will not be replaced by the old
@@ -543,6 +539,7 @@ func (m *Map) ClearExpireKeys() int {
 	}
 	m.dl.Unlock()
 
+	m.l.RUnlock()
 	return n
 }
 

@@ -1,88 +1,87 @@
 package cmap
 
 import (
-	"hash/crc32"
 	"sync"
 )
 
 // SlotMap consist of many map slots
 // It can auto reduce data to those slots by s.hash().
 // If sm.autoExtend = true, slots will work in extendable size of slots concurrently safe.
-type SlotMap struct{
+type SlotMap struct {
 	autoExtend bool
 
-	l *sync.RWMutex
+	l     *sync.RWMutex
 	slots []Map
 }
 
 func NewSlotMap(slotNum int, autoExtend bool) *SlotMap {
 	return &SlotMap{
-	autoExtend: autoExtend,
-	l: &sync.RWMutex{},
-	slots: make([]Map, slotNum, 2 *slotNum)
+		autoExtend: autoExtend,
+		l:          &sync.RWMutex{},
+		slots:      make([]Map, slotNum, 2*slotNum),
 	}
 }
 
-func (s *slotMap) lock() {
-    if s.autoExtend {
+func (s *SlotMap) lock() {
+	if s.autoExtend {
 		s.l.Lock()
 	}
 }
 
-func (s *slotMap) unlock() {
+func (s *SlotMap) unlock() {
 	if s.autoExtend {
-		s.l.UnLock()
+		s.l.Unlock()
 	}
 }
-func (s *slotMap) rLock() {
-    if s.autoExtend {
+func (s *SlotMap) rLock() {
+	if s.autoExtend {
 		s.l.RLock()
 	}
 }
 
-func (s *slotMap) rUnlock() {
+func (s *SlotMap) rUnlock() {
 	if s.autoExtend {
-		s.l.RUnLock()
+		s.l.RUnlock()
 	}
 }
 
-func (s *slotMap) SlotNum() int {
-	s.rlock()
-    num := len(s.slots)
+func (s *SlotMap) SlotNum() int {
+	s.rLock()
+	num := len(s.slots)
 	s.rUnlock()
 	return num
 }
 
-
-func (s slotMap) hash(key string) int {
-	return UsMBCRC16([]byte(key)) % s.slotNum
+func (s SlotMap) hash(key string) int {
+	var slotNum int
+	s.rLock()
+	slotNum = len(s.slots)
+	s.rUnlock()
+	return UsMBCRC16([]byte(key)) % slotNum
 }
 
-func (s *slotMap) Set(key string, value interface{}) {
-	s.rlock()
-	slot := slots[s.hash(key)]
+func (s *SlotMap) Set(key string, value interface{}) {
+	s.rLock()
+	slot := s.slots[s.hash(key)]
 	s.rUnlock()
-	
+
 	slot.Set(key, value)
 	return
 }
 
-func (s *slotMap) Get(key string) interface{} {
-	s.rlock()
-	slot := slots[s.hash(key)]
+func (s *SlotMap) Get(key string) interface{} {
+	s.rLock()
+	slot := s.slots[s.hash(key)]
 	s.rUnlock()
 
 	return slot.Get(key)
 }
 
-func (s *slotMap) Delete(key string) {
-	s.rlock()
-	slot := slots[s.hash(key)]
+func (s *SlotMap) Delete(key string) {
+	s.rLock()
+	slot := s.slots[s.hash(key)]
 	s.rUnlock()
 
 	slot.Delete(key)
 	return
 }
-
-
-

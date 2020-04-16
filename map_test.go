@@ -36,13 +36,17 @@ func TestDelete2(t *testing.T) {
 	m.Delete("username1")
 	m.Delete("hehe")
 
-	for i := 0; i < 1000; i++ {
+	wg := sync.WaitGroup{}
+	wg.Add(100000*2 + 1000)
+	for i := 0; i < 100000; i++ {
 		go func(i int) {
+			defer wg.Done()
 			var setdone = make(chan bool, 1)
 			go func(j int, setdone chan bool) {
+				defer wg.Done()
 				<-setdone
 				time.Sleep(1 * time.Second)
-				m.Delete(strconv.Itoa(i))
+				m.Delete(strconv.Itoa(j))
 			}(i, setdone)
 
 			m.Set(strconv.Itoa(i), i)
@@ -51,10 +55,11 @@ func TestDelete2(t *testing.T) {
 	}
 	for i := 0; i < 1000; i++ {
 		go func(i int) {
+			defer wg.Done()
 			m.ClearExpireKeys()
 		}(i)
 	}
-	time.Sleep(7 * time.Second)
+	wg.Wait()
 	m.PrintDetail()
 }
 
@@ -315,6 +320,23 @@ func BenchmarkSyncMapGetParallel(b *testing.B) {
 	})
 }
 
+// BenchmarkMapClearExpireKeys-4   	   50000	     26080 ns/op	   11713 B/op	       1 allocs/op
+// go test -benchmem -run=^$ cmap -bench ^(BenchmarkMapClearExpireKeys)$
+func BenchmarkMapClearExpireKeys(b *testing.B) {
+	m := newMap()
+	for i := 0; i < 1000000; i++ {
+		m.Set(fmt.Sprintf("key-%d", i), i)
+	}
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			func() {
+				m.ClearExpireKeys()
+			}()
+		}
+	})
+}
 func randomString(length int) string {
 	str := "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	var r *rand.Rand

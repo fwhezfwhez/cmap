@@ -576,3 +576,11 @@ func (m *Map) clearExpireKeys() int {
 	m.l.Unlock()
 	return num
 }
+
+// MLen
+func (m *Map) MLen() int {
+	m.l.RLock()
+	leng := len(m.m)
+	m.l.RUnlock()
+	return leng
+}

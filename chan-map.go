@@ -12,17 +12,21 @@ import (
 	"github.com/fwhezfwhez/errorx"
 )
 
+// Since chan-map will start a single goroutine to consume operations in serial, this chanMapResponse will work as a response after an operation is consumed.
 type ChanMapRepsonse struct {
 	Response interface{}
 	Err      error
 }
 
+// consumed response when an error occurs
 func errOf(e error) ChanMapRepsonse {
 	return ChanMapRepsonse{
 		Response: nil,
 		Err:      errorx.Wrap(e),
 	}
 }
+
+// consumed response when operation is successfully done
 func successOf(resp interface{}) ChanMapRepsonse {
 	return ChanMapRepsonse{
 		Response: resp,
@@ -36,19 +40,32 @@ type OperationI interface {
 	Response() chan ChanMapRepsonse
 }
 
+// ChanMap is concurrently safe map, realized using chan.
+// As soon as a chanMap is init by newChanMap(chanSize), a goroutine will auto run and get ready to receive operations through a chan 'opertions chan OperationI'.
+// All operations of get,set,delete will work as an operaion instance and send to the channel like a producer and chanMap's 'm' is a consumer.
 type ChanMap struct {
+	// remained for extended function, like autonoumicly extend chan buffer size, when m is too big
 	l *sync.RWMutex
+	// inner map, save data
 	m map[string]Value
 
-	ol         *sync.RWMutex
+	// remained for extending
+	ol *sync.RWMutex
+
+	// All commands of set,get,delete... will be wrapped as an operation(command, values, response chan).
+	// operations will get handled in serial.
 	operations chan OperationI
 
+	// After a chanmap is init, it will start a goroutine to put m to work as a consumer, and consumed is then set true.
 	consumed bool
-	offset   int64
+	// Each set,del command will increase offset by 1, when offset reach max value of int64, it will return back to 0
+	offset int64
 
+	// When recv a forceClear signal, the consumer goroutine will forcely stop.
 	forceClear chan struct{}
 }
 
+// new a chan-map with cap buffer size
 func NewChanMap(cap int) *ChanMap {
 	cm := &ChanMap{
 		l: &sync.RWMutex{},
@@ -64,6 +81,7 @@ func NewChanMap(cap int) *ChanMap {
 	return cm
 }
 
+// helps testing case to prepare a chan-map with exist map
 func newChanMapWithExistedMap(cap int, m map[string]Value) *ChanMap {
 	cm := &ChanMap{
 		l: &sync.RWMutex{},
@@ -79,15 +97,19 @@ func newChanMapWithExistedMap(cap int, m map[string]Value) *ChanMap {
 	return cm
 }
 
+// recv an operation like get,set,delete
 func (cm *ChanMap) recevOperation(o OperationI) {
 	cm.operations <- o
 }
+
+// when recev set/del operations, this function will be called
 func (cm *ChanMap) offsetIncr() int64 {
 	new := atomic.AddInt64(&cm.offset, 1)
 	atomic.CompareAndSwapInt64(&cm.offset, math.MaxInt64, 0)
 	return new
 }
 
+// Where chan-map consumes operations
 func (cm *ChanMap) autoConsume() {
 	if cm.consumed {
 		return
@@ -126,6 +148,7 @@ func (cm *ChanMap) gracefulStop() {
 	close(cm.operations)
 }
 
+// After consumed, send response to response chanel, this function make sure this operation will not block.
 func (cm *ChanMap) writeResponse(response chan ChanMapRepsonse, resp ChanMapRepsonse) {
 	go func() {
 		select {
@@ -211,24 +234,25 @@ func (cm *ChanMap) delete(values ...interface{}) error {
 	return nil
 }
 
-type Operation struct {
+// a common operation
+type operation struct {
 	command  string
 	values   []interface{}
 	response chan ChanMapRepsonse
 }
 
-func (set Operation) Command() string {
+func (set operation) Command() string {
 	return set.command
 }
-func (set Operation) Values() []interface{} {
+func (set operation) Values() []interface{} {
 	return set.values
 }
-func (set Operation) Response() chan ChanMapRepsonse {
+func (set operation) Response() chan ChanMapRepsonse {
 	return set.response
 }
 
 func (cm *ChanMap) Set(key string, value interface{}) error {
-	operation := Operation{
+	operation := operation{
 		command:  "SET",
 		values:   []interface{}{key, value},
 		response: make(chan ChanMapRepsonse, 1),
@@ -246,7 +270,7 @@ func (cm *ChanMap) Set(key string, value interface{}) error {
 }
 
 func (cm *ChanMap) Get(key string) (interface{}, error) {
-	operation := Operation{
+	operation := operation{
 		command:  "GET",
 		values:   []interface{}{key},
 		response: make(chan ChanMapRepsonse, 1),
@@ -264,7 +288,7 @@ func (cm *ChanMap) Get(key string) (interface{}, error) {
 }
 
 func (cm *ChanMap) Delete(key string) error {
-	operation := Operation{
+	operation := operation{
 		command:  "DEL",
 		values:   []interface{}{key},
 		response: make(chan ChanMapRepsonse, 1),
@@ -272,7 +296,7 @@ func (cm *ChanMap) Delete(key string) error {
 	cm.recevOperation(operation)
 	select {
 	case <-time.After(10 * time.Second):
-		return errorx.NewFromStringf("get command time out, no reponse")
+		return errorx.NewFromStringf("delete command time out, no reponse")
 	case v := <-operation.Response():
 		if v.Err != nil {
 			return errorx.Wrap(v.Err)

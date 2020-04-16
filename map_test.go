@@ -365,3 +365,12 @@ func randomInt(max int) int {
 
 	return r.Intn(max)
 }
+
+func TestSelect(t *testing.T) {
+	var a = make(chan int)
+	select {
+	case <-time.After(5 * time.Second):
+		fmt.Println("time out ")
+	case a <- 5:
+	}
+}

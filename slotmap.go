@@ -163,7 +163,7 @@ func (s *SlotMap) SetEx(key string, value interface{}, seconds int) {
 	slot.SetEx(key, value, seconds)
 	return
 }
-func (s *SlotMap) Get(key string) interface{} {
+func (s *SlotMap) Get(key string) (interface{}, bool) {
 	s.rLock()
 	slot := s.slots[s.hash(key)]
 	s.rUnlock()

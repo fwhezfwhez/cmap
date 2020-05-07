@@ -98,8 +98,8 @@ func TestWRCMap(t *testing.T) {
 					os.Exit(-1)
 				}
 			}()
-			_ = m.Get(fmt.Sprintf("key-%d", i))
-			_ = m.Get(fmt.Sprintf("ex-key-%d", i))
+			_,_ = m.Get(fmt.Sprintf("key-%d", i))
+			_,_ = m.Get(fmt.Sprintf("ex-key-%d", i))
 		}(i)
 	}
 
@@ -139,9 +139,9 @@ func TestWRCMap(t *testing.T) {
 					os.Exit(-1)
 				}
 			}()
-			_ = m.Get(fmt.Sprintf("key-%d", i))
-			_ = m.Get(fmt.Sprintf("ex-key-%d", i))
-			_ = m.Get(fmt.Sprintf("nx-key-%d", i))
+			_,_ = m.Get(fmt.Sprintf("key-%d", i))
+			_,_ = m.Get(fmt.Sprintf("ex-key-%d", i))
+			_,_ = m.Get(fmt.Sprintf("nx-key-%d", i))
 		}(i)
 	}
 	for i := 0; i < 10000; i++ {
@@ -238,7 +238,7 @@ func BenchmarkMapGet(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_ = m.Get(fmt.Sprintf("username-%d", i))
+		_,_ = m.Get(fmt.Sprintf("username-%d", i))
 	}
 }
 
@@ -297,7 +297,7 @@ func BenchmarkMapGetParallel(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			func() {
-				_ = m.Get(fmt.Sprintf("key-%d", randomInt(100000)))
+				_,_ = m.Get(fmt.Sprintf("key-%d", randomInt(100000)))
 			}()
 		}
 	})

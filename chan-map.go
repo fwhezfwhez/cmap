@@ -42,13 +42,15 @@ type OperationI interface {
 
 // ChanMap is concurrently safe map, realized using chan.
 // As soon as a chanMap is init by newChanMap(chanSize), a goroutine will auto run and get ready to receive operations through a chan 'opertions chan OperationI'.
-// All operations of get,set,delete will work as an operaion instance and send to the channel like a producer and chanMap's 'm' is a consumer.
+// All operations of get,set,delete will work as an operation instance and send to the channel like a producer and chanMap's 'm' is a consumer.
 type ChanMap struct {
+	// not used.
 	// remained for extended function, like autonoumicly extend chan buffer size, when m is too big
 	l *sync.RWMutex
 	// inner map, save data
 	m map[string]Value
 
+	// not used.
 	// remained for extending
 	ol *sync.RWMutex
 
@@ -56,7 +58,7 @@ type ChanMap struct {
 	// operations will get handled in serial.
 	operations chan OperationI
 
-	// After a chanmap is init, it will start a goroutine to put m to work as a consumer, and consumed is then set true.
+	// After a chanmap is init, it will start a goroutine to put m to work as a consumer, and 'consumed' is then set true.
 	consumed bool
 	// Each set,del command will increase offset by 1, when offset reach max value of int64, it will return back to 0
 	offset int64
@@ -104,8 +106,8 @@ func (cm *ChanMap) recevOperation(o OperationI) {
 
 // when recev set/del operations, this function will be called
 func (cm *ChanMap) offsetIncr() int64 {
-	new := atomic.AddInt64(&cm.offset, 1)
 	atomic.CompareAndSwapInt64(&cm.offset, math.MaxInt64, 0)
+	new := atomic.AddInt64(&cm.offset, 1)
 	return new
 }
 

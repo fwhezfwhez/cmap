@@ -190,10 +190,10 @@ func (m *${Model}Map) gRLock() {
 	m.dll.RLock()
 }
 func (m *${Model}Map) gRUnlock() {
-	m.l.RUnlock()
-	m.wl.RUnlock()
-	m.dl.RUnlock()
 	m.dll.RUnlock()
+	m.dl.RUnlock()
+	m.wl.RUnlock()
+	m.l.RUnlock()
 }
 
 func (m *${Model}Map) IsBusy() bool {
@@ -251,8 +251,9 @@ func (m *${Model}Map) Set(key string, value ${Model}) {
 // When offset reaches max int64 value, will be back to 0
 // So to judege values former or latter, should compare v.execAt first and then comapre offset.
 func (m *${Model}Map) offsetIncr() int64 {
-	atomic.AddInt64(&m.offset, 1)
 	atomic.CompareAndSwapInt64(&m.offset, math.MaxInt64, 0)
+
+	atomic.AddInt64(&m.offset, 1)
 	return m.offset
 }
 
@@ -505,40 +506,37 @@ func (m *${Model}Map) Len() int {
 func (m *${Model}Map) ClearExpireKeys() int {
 	if m.IsBusy() {
 		// on clearing job, another clear job do nothing
-		// returned cleared key number is not concurrently consistent, because m.mode is not considered locked.
 		return 0
 	}
 	// clear Map.m expired keys
 	n := m.clearExpireKeys()
 
-	// sync new writen data from Map.write
-	var tmp = make(map[string]${Model}Value)
-	m.wl.Lock()
+	m.l.Lock()
+
+	m.wl.RLock()
 	for k, v := range m.write {
-		tmp[k] = v
+		v2, ok := m.m[k]
+		if !ok {
+			m.m[k] = v
+		} else {
+			if v2.LatterThan(v) {
+				continue
+			}
+		}
 	}
+	m.wl.RUnlock()
+
+	m.wl.Lock()
 	m.write = make(map[string]${Model}Value)
 	m.wl.Unlock()
 
-	m.l.Lock()
-	for k, v := range tmp {
-		m.m[k] = v
-	}
 	m.l.Unlock()
 
 	// sync deleted operation from Map.del
-	tmp = make(map[string]${Model}Value)
+	m.l.Lock()
 
 	m.dll.Lock()
-
 	for k, v := range m.del {
-		tmp[k] = v
-	}
-	m.del = make(map[string]${Model}Value)
-	m.dll.Unlock()
-
-	m.l.Lock()
-	for k, v := range tmp {
 		v2, ok := m.m[k]
 		if !ok {
 			continue
@@ -547,21 +545,19 @@ func (m *${Model}Map) ClearExpireKeys() int {
 			delete(m.m, k)
 		}
 	}
+
+	m.del = make(map[string]${Model}Value)
+	m.dll.Unlock()
+
 	m.l.Unlock()
-
-	tmp = make(map[string]${Model}Value)
-
-	m.l.RLock()
-	for k, v := range m.m {
-		tmp[k] = v
-	}
-	m.l.RUnlock()
 
 	// When migrating data from m to drity, since while tmp is coping from m.m, m.m and m.dirty are still writable, tmp is relatively old.
 	// So make sure data from old m.m's copied tmp will not influence latest writened data in dirty.
+	m.l.RLock()
+
 	m.dl.Lock()
 	m.dirty = make(map[string]${Model}Value)
-	for k, v := range tmp {
+	for k, v := range m.m {
 		v2, ok := m.dirty[k]
 		if ok && v2.LatterThan(v) {
 			// make sure existed latest writen data will not be replaced by the old
@@ -573,6 +569,7 @@ func (m *${Model}Map) ClearExpireKeys() int {
 	}
 	m.dl.Unlock()
 
+	m.l.RUnlock()
 	return n
 }
 

@@ -221,8 +221,8 @@ func (m *Map) Set(key string, value interface{}) {
 // When offset reaches max int64 value, will be back to 0
 // So to judege values former or latter, should compare v.execAt first and then comapre offset.
 func (m *Map) offsetIncr() int64 {
-	atomic.AddInt64(&m.offset, 1)
 	atomic.CompareAndSwapInt64(&m.offset, math.MaxInt64, 0)
+	atomic.AddInt64(&m.offset, 1)
 	return m.offset
 }
 
@@ -306,7 +306,7 @@ func (m *Map) SetExNx(key string, value interface{}, seconds int) {
 }
 
 // If key is expired or not existed, return nil
-func (m *Map) Get(key string) interface{} {
+func (m *Map) Get(key string) (interface{}, bool) {
 	if !m.IsBusy() {
 		return getFrom(m.l, m.m, key)
 	} else {
@@ -424,27 +424,27 @@ func (m *Map) PrintDetail() string {
 	return string(b)
 }
 
-func getFrom(l *sync.RWMutex, m map[string]Value, key string) interface{} {
+func getFrom(l *sync.RWMutex, m map[string]Value, key string) (interface{}, bool) {
 	l.RLock()
 	value, ok := m[key]
 	l.RUnlock()
 
 	if !ok {
-		return nil
+		return nil, false
 	}
 
 	if value.exp == -1 {
-		return value.v
+		return value.v, true
 	}
 
 	if time.Now().UnixNano() >= value.exp {
 		l.Lock()
 		delete(m, key)
 		l.Unlock()
-		return nil
+		return nil, false
 	}
 
-	return value.v
+	return value.v, true
 }
 
 func (m *Map) setBusy() {

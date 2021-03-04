@@ -221,7 +221,7 @@ func (m *Map) Set(key string, value interface{}) {
 // When offset reaches max int64 value, will be back to 0
 // So to judege values former or latter, should compare v.execAt first and then comapre offset.
 func (m *Map) offsetIncr() int64 {
-	atomic.CompareAndSwapInt64(&m.offset, math.MaxInt64, 0)
+	atomic.CompareAndSwapInt64(&m.offset, math.MaxInt64-10000, 0)
 	atomic.AddInt64(&m.offset, 1)
 	return m.offset
 }
@@ -580,4 +580,25 @@ func (m *Map) MLen() int {
 	leng := len(m.m)
 	m.l.RUnlock()
 	return leng
+}
+
+// range function returns bool value
+// if false,  will stop range process
+func (m *Map) Range(f func(key string, value interface{}) bool) {
+	if m.IsBusy() {
+		rangem(m.dl, m.dirty, f)
+	} else {
+		rangem(m.l, m.m, f)
+	}
+}
+
+func rangem(l *sync.RWMutex, mp map[string]Value, f func(key string, value interface{}) bool) {
+	l.RLock()
+	defer l.RUnlock()
+
+	for k, v := range mp {
+		if !f(k, v.v) {
+			break
+		}
+	}
 }

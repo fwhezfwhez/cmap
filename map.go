@@ -592,6 +592,16 @@ func (m *Map) Range(f func(key string, value interface{}) bool) {
 	}
 }
 
+// RealLength returns cmap's real length.
+// If it's busy, it returns length of dirty
+// If free, returns length of m
+func (m *Map) RealLength() int {
+	if m.IsBusy() {
+		return lengthOf(m.l, m.m)
+	}
+	return lengthOf(m.dl, m.dirty)
+}
+
 func rangem(l *sync.RWMutex, mp map[string]Value, f func(key string, value interface{}) bool) {
 	l.RLock()
 	defer l.RUnlock()
@@ -601,4 +611,10 @@ func rangem(l *sync.RWMutex, mp map[string]Value, f func(key string, value inter
 			break
 		}
 	}
+}
+
+func lengthOf(l *sync.RWMutex, mp map[string]Value) int {
+	l.RLock()
+	defer l.RUnlock()
+	return len(mp)
 }

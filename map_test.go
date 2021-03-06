@@ -98,8 +98,8 @@ func TestWRCMap(t *testing.T) {
 					os.Exit(-1)
 				}
 			}()
-			_,_ = m.Get(fmt.Sprintf("key-%d", i))
-			_,_ = m.Get(fmt.Sprintf("ex-key-%d", i))
+			_, _ = m.Get(fmt.Sprintf("key-%d", i))
+			_, _ = m.Get(fmt.Sprintf("ex-key-%d", i))
 		}(i)
 	}
 
@@ -139,9 +139,9 @@ func TestWRCMap(t *testing.T) {
 					os.Exit(-1)
 				}
 			}()
-			_,_ = m.Get(fmt.Sprintf("key-%d", i))
-			_,_ = m.Get(fmt.Sprintf("ex-key-%d", i))
-			_,_ = m.Get(fmt.Sprintf("nx-key-%d", i))
+			_, _ = m.Get(fmt.Sprintf("key-%d", i))
+			_, _ = m.Get(fmt.Sprintf("ex-key-%d", i))
+			_, _ = m.Get(fmt.Sprintf("nx-key-%d", i))
 		}(i)
 	}
 	for i := 0; i < 10000; i++ {
@@ -238,7 +238,23 @@ func BenchmarkMapGet(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_,_ = m.Get(fmt.Sprintf("username-%d", i))
+		_, _ = m.Get(fmt.Sprintf("username-%d", i))
+	}
+}
+
+// BenchmarkMapv2Get-4      3000000               478 ns/op              25 B/op          2 allocs/op
+// go test -run ^BenchmarkMapv2Get$ -bench ^BenchmarkMapv2Get$ -benchmem
+func BenchmarkMapv2Get(b *testing.B) {
+	m := NewMapV2(nil, 5, time.Minute)
+	time.Sleep(1 * time.Second)
+	for i := 0; i < 1000000; i++ {
+		m.Set(fmt.Sprintf("username-%d", i), fmt.Sprintf("cmap-%d", i))
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		_, _ = m.Get(fmt.Sprintf("username-%d", i))
 	}
 }
 
@@ -285,6 +301,21 @@ func BenchmarkSyncMapSetParallel(b *testing.B) {
 	})
 }
 
+// BenchmarkMapv2SetParallel-4       200000              6955 ns/op            6486 B/op         41 allocs/op
+// go test -run ^BenchmarkMapv2SetParallel$ -bench ^BenchmarkMapv2SetParallel$ -benchmem
+func BenchmarkMapv2SetParallel(b *testing.B) {
+	m := NewMapV2(nil, 30, 10*time.Minute)
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			func() {
+				randomStr := randomString(40)
+				m.Set(randomStr, 1)
+			}()
+		}
+	})
+}
+
 // BenchmarkMapGetParallel-4   	  500000	      3409 ns/op	    5399 B/op	       3 allocs/op
 // go test -run ^BenchmarkMapGetParallel$ -bench ^BenchmarkMapGetParallel$ -benchmem
 func BenchmarkMapGetParallel(b *testing.B) {
@@ -297,7 +328,25 @@ func BenchmarkMapGetParallel(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			func() {
-				_,_ = m.Get(fmt.Sprintf("key-%d", randomInt(100000)))
+				_, _ = m.Get(fmt.Sprintf("key-%d", randomInt(100000)))
+			}()
+		}
+	})
+}
+
+// BenchmarkMapGetParallel-4        500000              6480 ns/op            5399 B/op          3 allocs/op
+// go test -run ^BenchmarkMapv2GetParallel$ -bench ^BenchmarkMapv2GetParallel$ -benchmem
+func BenchmarkMapv2GetParallel(b *testing.B) {
+	m := NewMapV2(nil, 5, 5*time.Minute)
+	for i := 0; i < 1000000; i++ {
+		m.Set(fmt.Sprintf("key-%d", i), i)
+	}
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			func() {
+				_, _ = m.Get(fmt.Sprintf("key-%d", randomInt(100000)))
 			}()
 		}
 	})

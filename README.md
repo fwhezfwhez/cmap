@@ -8,12 +8,20 @@
     <a href="https://codecov.io/gh/fwhezfwhez/cmap"><img src="https://codecov.io/gh/fwhezfwhez/cmap/branch/master/graph/badge.svg"></a>
 </p>
 
-cmap is a concurrently safe map in golang. Providing apis below:
+cmap is a concurrently safe map in golang. Providing two stable map type with apis:
+
+**map type**
+
+- map   `cmap.NewMap`
+- mapv2 `cmap.NewMapV2`
+
+**apis**
 
 - SET
 - GET
 - SETEX
 - SETNX
+- SETEXNX
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->

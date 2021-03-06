@@ -208,7 +208,7 @@ func TestDelete(t *testing.T) {
 	fmt.Println(string(b))
 }
 
-// go test -benchmem -run=^$ cmap -bench ^(BenchmarkMapSet)$
+// go test -run ^BenchmarkMapSet$ -bench ^BenchmarkMapSet$ -benchmem
 // BenchmarkMapSet-4   	 1000000	      1820 ns/op	     617 B/op	       5 allocs/op
 func BenchmarkMapSet(b *testing.B) {
 	m := newMap()
@@ -217,7 +217,7 @@ func BenchmarkMapSet(b *testing.B) {
 	}
 }
 
-// go test -benchmem -run=^$ cmap -bench ^(BenchmarkSyncMapSet)$
+// go test -run ^BenchmarkSyncMapSet$ -bench ^BenchmarkSyncMapSet$ -benchmem
 // BenchmarkSyncMapSet-4   	 1000000	      1931 ns/op	     243 B/op	       9 allocs/op
 func BenchmarkSyncMapSet(b *testing.B) {
 	m := sync.Map{}
@@ -228,7 +228,7 @@ func BenchmarkSyncMapSet(b *testing.B) {
 }
 
 // BenchmarkMapGet-4   	 5000000	       345 ns/op	      24 B/op	       1 allocs/op
-// go test -benchmem -run=^$ cmap -bench ^(BenchmarkMapGet)$
+// go test -run ^BenchmarkMapGet$ -bench ^BenchmarkMapGet$ -benchmem
 func BenchmarkMapGet(b *testing.B) {
 	m := newMap()
 	for i := 0; i < 1000000; i++ {
@@ -286,7 +286,7 @@ func BenchmarkSyncMapSetParallel(b *testing.B) {
 }
 
 // BenchmarkMapGetParallel-4   	  500000	      3409 ns/op	    5399 B/op	       3 allocs/op
-// go test -benchmem -run=^$ cmap -bench ^(BenchmarkMapGetParallel)$
+// go test -run ^BenchmarkMapGetParallel$ -bench ^BenchmarkMapGetParallel$ -benchmem
 func BenchmarkMapGetParallel(b *testing.B) {
 	m := newMap()
 	for i := 0; i < 1000000; i++ {
@@ -304,7 +304,7 @@ func BenchmarkMapGetParallel(b *testing.B) {
 }
 
 // BenchmarkSyncMapGetParallel-4   	  200000	      5359 ns/op	    5399 B/op	       3 allocs/op
-// go test -benchmem -run=^$ cmap -bench ^(BenchmarkSyncMapGetParallel)$
+// go test -run ^BenchmarkSyncMapGetParallel$ -bench ^BenchmarkSyncMapGetParallel$ -benchmem
 func BenchmarkSyncMapGetParallel(b *testing.B) {
 	m := sync.Map{}
 	for i := 0; i < 1000000; i++ {

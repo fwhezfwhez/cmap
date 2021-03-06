@@ -47,6 +47,17 @@ func (v Value) FormerThan(v2 Value) bool {
 	return v.offset < v2.offset
 }
 
+func (v Value) isExpire() bool {
+	if v.exp == -1 {
+		return false
+	}
+
+	if v.exp < time.Now().UnixNano() {
+		return true
+	}
+	return false
+}
+
 // make value readable
 func (v Value) detail() map[string]interface{} {
 	m := map[string]interface{}{
@@ -62,8 +73,9 @@ func (v Value) detail() map[string]interface{} {
 // When map.mode == M_FREE, data are writable and readable using map.m.
 // When map.mode == M_BUSY, data are writable and readble using map.dirty, writable map.write and writable map.del
 const (
-	M_FREE = 0
-	M_BUSY = 1
+	M_FREE1 = 2 // free1-同步中, m 同步write和del，m必须阻塞，防止幻读
+	M_FREE2 = 0 // free2-同步完成, m可以独立承担读写
+	M_BUSY  = 1
 )
 
 // Map is concurrently safe, and faster than sync.Map.
@@ -81,6 +93,9 @@ const (
 //    map.del change to read-only and data in m.del will sync to map.m then cleared
 //    map.dirty are first be cleared and then synchronizing data from map.m and block new write request, after sync job done, finish all writing request.
 type Map struct {
+	deltal *sync.RWMutex // 在增量复制时的锁
+
+	modl *sync.RWMutex
 	mode int
 
 	l *sync.RWMutex
@@ -115,7 +130,9 @@ type mapView struct {
 
 func newMap() *Map {
 	return &Map{
-		mode: M_FREE,
+		deltal: &sync.RWMutex{},
+		modl:   &sync.RWMutex{},
+		mode:   M_FREE2,
 
 		l: &sync.RWMutex{},
 		m: make(map[string]Value),
@@ -167,54 +184,80 @@ func (m *Map) gRUnlock() {
 }
 
 func (m *Map) IsBusy() bool {
-	m.gRLock()
-
-	defer m.gRUnlock()
+	m.modl.RLock()
+	defer m.modl.RUnlock()
 
 	return m.mode == M_BUSY
 }
 
+func (m *Map) IsFree1() bool {
+	m.modl.RLock()
+	defer m.modl.RUnlock()
+
+	return m.mode == M_FREE1
+}
+
+func (m *Map) IsFree2() bool {
+	m.modl.RLock()
+	defer m.modl.RUnlock()
+
+	return m.mode == M_FREE2
+}
+
+func (m *Map) isBusyWrapedBymodl() bool {
+	return m.mode == M_BUSY
+}
+
+func (m *Map) isFree1WrapedBymodl() bool {
+	return m.mode == M_FREE1
+}
+
+func (m *Map) isFree2WrapedBymodl() bool {
+	return m.mode == M_FREE2
+}
+
 // map.Set
 func (m *Map) Set(key string, value interface{}) {
+	m.set(key, value, -1, false)
+}
+
+func (m *Map) set(key string, value interface{}, seconds int, nx bool) {
+	var exp int64
+	if seconds == -1 {
+		exp = -1
+	} else {
+		exp = time.Now().Add(time.Duration(seconds) * time.Second).UnixNano()
+	}
+
 	ext := time.Now().UnixNano()
 	offset := m.offsetIncr()
 
-	// only when not busy, m is writable
-	if !m.IsBusy() {
-		m.l.Lock()
+	m.modl.RLock()
+	defer m.modl.RUnlock()
 
-		m.m[key] = Value{
-			v:   value,
-			exp: -1,
+	// free2 时，写入m，异步写入dir
+	if m.isFree2WrapedBymodl() {
+		setm(m.l, m.m, key, value, ext, offset, exp, nx)
 
-			execAt: ext,
-			offset: offset,
-		}
-		m.l.Unlock()
-
+		go func(ext int64, offset int64) {
+			setm(m.dl, m.dirty, key, value, ext, offset, exp, nx)
+		}(ext, offset)
+		return
 	}
 
-	m.dl.Lock()
-	m.dirty[key] = Value{
-		v:      value,
-		exp:    -1,
-		execAt: ext,
-		offset: offset,
+	if m.isFree1WrapedBymodl() {
+		m.deltal.RLock()
+		setm(m.l, m.m, key, value, ext, offset, exp, nx)
+		m.deltal.RUnlock()
+		go func(ext int64, offset int64) {
+			setm(m.dl, m.dirty, key, value, ext, offset, exp, nx)
+		}(ext, offset)
+		return
 	}
-	m.dl.Unlock()
 
-	// only when m is busy, write map is writable
-	if m.IsBusy() {
-		m.wl.Lock()
-		m.write[key] = Value{
-			v:   value,
-			exp: -1,
-
-			execAt: ext,
-			offset: offset,
-		}
-		m.wl.Unlock()
-	}
+	// busy时，写入dir和write
+	setm(m.dl, m.dirty, key, value, ext, offset, exp, nx)
+	setm(m.wl, m.write, key, value, ext, offset, exp, nx)
 }
 
 // set,del,setnx,setex will increase map.offset.
@@ -231,126 +274,74 @@ func (m *Map) offsetIncr() int64 {
 // If seconds are set -1, value will not be expired
 // expired keys will be deleted as soon as calling m.Get(key), or calling m.ClearExpireKeys()
 func (m *Map) SetEx(key string, value interface{}, seconds int) {
-	ext := time.Now().UnixNano()
-	offset := m.offsetIncr()
-
-	// only when not busy, m is writable
-	if !m.IsBusy() {
-		m.l.Lock()
-
-		m.m[key] = Value{
-			v:   value,
-			exp: time.Now().Add(time.Duration(seconds) * time.Second).UnixNano(),
-
-			execAt: ext,
-			offset: offset,
-		}
-		m.l.Unlock()
-
-	}
-
-	m.dl.Lock()
-
-	m.dirty[key] = Value{
-		v:      value,
-		exp:    time.Now().Add(time.Duration(seconds) * time.Second).UnixNano(),
-		execAt: ext,
-		offset: offset,
-	}
-	m.dl.Unlock()
-
-	// only when m is busy, write map is writable
-	if m.IsBusy() {
-		m.wl.Lock()
-		m.write[key] = Value{
-			v:      value,
-			exp:    time.Now().Add(time.Duration(seconds) * time.Second).UnixNano(),
-			execAt: ext,
-			offset: offset,
-		}
-		m.wl.Unlock()
-
-	}
+	m.set(key, value, seconds, false)
 }
 
 // map.SetNx
 // If key exist, do nothing, otherwise set key,value into map
 func (m *Map) SetNx(key string, value interface{}) {
-	m.SetExNx(key, value, -1)
+	m.set(key, value, -1, true)
 }
 
 // map.SetEXNX
 // If key exist, do nothing, otherwise set key,value into map
 func (m *Map) SetExNx(key string, value interface{}, seconds int) {
-	if m.IsBusy() {
-		m.dl.RLock()
-		_, exist := m.dirty[key]
-		m.dl.RUnlock()
-		if exist {
-			return
-		} else {
-			m.SetEx(key, value, seconds)
-			return
-		}
-	} else {
-		m.l.RLock()
-		_, exist := m.m[key]
-		m.l.RUnlock()
-		if exist {
-			return
-		} else {
-			m.SetEx(key, value, seconds)
-			return
-		}
-	}
+	m.set(key, value, seconds, true)
 }
 
 // If key is expired or not existed, return nil
 func (m *Map) Get(key string) (interface{}, bool) {
-	if !m.IsBusy() {
-		return getFrom(m.l, m.m, key)
-	} else {
-		return getFrom(m.dl, m.dirty, key)
-	}
+	//m.modl.RLock()
+	//defer m.modl.RUnlock()
+	//
+	//var message string
+	//var rs interface{}
+	//var exist bool
+	//if m.isFree2WrapedBymodl() {
+	//	rs, exist = getFrom(m.l, m.m, key)
+	//	message = fmt.Sprintf("get from m, %d, %v %v", m.mode, rs, exist)
+	//} else if m.isFree1WrapedBymodl() {
+	//	// 增量同步时，无法get
+	//	m.deltal.RLock()
+	//	rs, exist = getFrom(m.l, m.m, key)
+	//	message = fmt.Sprintf("get from m, %d, %v %v", m.mode, rs, exist)
+	//	m.deltal.RUnlock()
+	//
+	//} else {
+	//	rs, exist = getFrom(m.dl, m.dirty, key)
+	//	message = fmt.Sprintf("get from dir, %d %v %v", m.mode, rs, exist)
+	//}
+	//
+	//if rs == nil || exist == false {
+	//	fmt.Println(message)
+	//	m.PrintDetailOf(key)
+	//	os.Exit(1)
+	//}
+
+	return m.mirrorOf(key)
 }
 
 // Delete
 func (m *Map) Delete(key string) {
 	offset := m.offsetIncr()
 	ext := time.Now().UnixNano()
-	if !m.IsBusy() {
-		m.l.RLock()
-		_, ok := m.m[key]
-		m.l.RUnlock()
 
-		if ok {
-			m.l.Lock()
-			delete(m.m, key)
-			m.l.Unlock()
-		}
+	m.modl.RLock()
+	defer m.modl.RUnlock()
+	if !m.isBusyWrapedBymodl() {
+		// free时， 删m和dir,其中，dir是异步删
+		deletem(m.l, m.m, key, ext)
+
+		go func() {
+			deletem(m.dl, m.dirty, key, ext)
+		}()
+		return
 	}
 
-	m.dl.RLock()
-	_, ok2 := m.dirty[key]
-	m.dl.RUnlock()
+	// busy时，要删除dir, 并且追加命令进del
+	deletem(m.dl, m.dirty, key, ext)
 
-	if ok2 {
-		m.dl.Lock()
-		delete(m.dirty, key)
-		m.dl.Unlock()
-	}
-
-	if m.IsBusy() {
-		m.dll.Lock()
-		m.del[key] = Value{
-			exp: 0,
-			v:   nil,
-
-			execAt: ext,
-			offset: offset,
-		}
-		m.dll.Unlock()
-	}
+	setm(m.dll, m.del, key, "waiting-deleted", ext, offset, -1, false)
 }
 
 func (m *Map) Detail() mapView {
@@ -414,8 +405,37 @@ func (m *Map) Detail() mapView {
 	return mv
 }
 
+func (m *Map) DetailOf(key string) mapView {
+	mv := mapView{
+		Mode:  m.mode,
+		M:     make(map[string]interface{}),
+		Dirty: make(map[string]interface{}),
+		Del:   make(map[string]interface{}),
+		Write: make(map[string]interface{}),
+	}
+
+	m.gRLock()
+	defer m.gRUnlock()
+
+	mv.M = m.m[key].detail()
+	mv.Dirty = m.dirty[key].detail()
+	mv.Del = m.del[key].detail()
+	mv.Write = m.write[key].detail()
+	return mv
+}
+
 func (m *Map) PrintDetail() string {
 	b, e := json.MarshalIndent(m.Detail(), "", "  ")
+	if e != nil {
+		fmt.Println(e.Error())
+		return ""
+	}
+	fmt.Println(string(b))
+	return string(b)
+}
+
+func (m *Map) PrintDetailOf(key string) string {
+	b, e := json.MarshalIndent(m.DetailOf(key), "", "  ")
 	if e != nil {
 		fmt.Println(e.Error())
 		return ""
@@ -448,15 +468,24 @@ func getFrom(l *sync.RWMutex, m map[string]Value, key string) (interface{}, bool
 }
 
 func (m *Map) setBusy() {
-	m.gLock()
+	m.modl.Lock()
+	defer m.modl.Unlock()
 	m.mode = M_BUSY
-	m.gUnlock()
+	// m.gUnlock()
 }
 
-func (m *Map) setFree() {
-	m.gLock()
-	m.mode = M_FREE
-	m.gUnlock()
+func (m *Map) setFree1() {
+	m.modl.Lock()
+	defer m.modl.Unlock()
+
+	m.mode = M_FREE1
+}
+
+func (m *Map) setFree2() {
+	m.modl.Lock()
+	defer m.modl.Unlock()
+
+	m.mode = M_FREE2
 }
 
 // Returns Map.m real length, not m.dirty or m.write.
@@ -473,16 +502,18 @@ func (m *Map) Len() int {
 // operation of read will use Map.dirty.
 // After clear job has been done, Map.dirty will be cleared and copy from Map.m, Map.write will be unwritenable and data in Map.write will sync to Map.m.
 func (m *Map) ClearExpireKeys() int {
+
 	if m.IsBusy() {
 		// on clearing job, another clear job do nothing
 		// returned cleared key number is not concurrently consistent, because m.mode is not considered locked.
 		return 0
 	}
-	// clear Map.m expired keys
+
+	// 在busy态删除m过期数据后进入free1态
 	n := m.clearExpireKeys()
 
+	m.deltal.Lock()
 	m.l.Lock()
-
 	m.wl.RLock()
 	for k, v := range m.write {
 		v2, ok := m.m[k]
@@ -495,10 +526,6 @@ func (m *Map) ClearExpireKeys() int {
 		}
 	}
 	m.wl.RUnlock()
-
-	m.wl.Lock()
-	m.write = make(map[string]Value)
-	m.wl.Unlock()
 
 	m.l.Unlock()
 
@@ -521,25 +548,16 @@ func (m *Map) ClearExpireKeys() int {
 
 	m.l.Unlock()
 
-	// When migrating data from m to drity, since while tmp is coping from m.m, m.m and m.dirty are still writable, tmp is relatively old.
-	// So make sure data from old m.m's copied tmp will not influence latest writened data in dirty.
-	m.l.RLock()
+	m.deltal.Unlock()
 
-	m.dl.Lock()
-	m.dirty = make(map[string]Value)
-	for k, v := range m.m {
-		v2, ok := m.dirty[k]
-		if ok && v2.LatterThan(v) {
-			// make sure existed latest writen data will not be replaced by the old
-			continue
-		} else {
-			// replace old data
-			m.dirty[k] = v
-		}
-	}
-	m.dl.Unlock()
+	m.setFree2()
 
-	m.l.RUnlock()
+	// 因为dir不论busy还是free，都在提供write。所以dir需要和m一样，清除过期数据
+	// dir里busy时积压的潜在失效key，会保留到free时清理
+	// 因为在free时，全程由m提供读写，所以dir的清理操作，可以异步完成
+	go func() {
+		clearExpire(m.dl, m.dirty)
+	}()
 	return n
 }
 
@@ -547,27 +565,47 @@ func (m *Map) ClearExpireKeys() int {
 // After clear expired keys in m, m will change into free auto..ly.
 // in free mode, m.del and m.write will not provides read nor write, m.dirty will not read.
 func (m *Map) clearExpireKeys() int {
+	return m.clearExpireKeysWithDepth(-1)
+}
+
+// Change to busy mode, now dirty provides read, write provides write, del provides delete.
+// After clear expired keys in m, m will change into free auto..ly.
+// in free mode, m.del and m.write will not provides read nor write, m.dirty will not read.
+func (m *Map) clearExpireKeysWithDepth(depth int) int {
+	// set m busy
 	m.setBusy()
-	defer m.setFree()
+
+	defer m.setFree1()
+
 	var num int
+
+	// keys should be deleted
 	var shouldDelete = make([]string, 0, len(m.m))
 
 	m.l.RLock()
 
+	var offset int
+L:
 	for k, v := range m.m {
 		if v.exp == -1 {
 			continue
 		}
 		if v.exp < time.Now().UnixNano() {
 			shouldDelete = append(shouldDelete, k)
+
+			// If hit depth of delete times, will stop range
+			offset ++
+			if depth > 0 && offset >= depth {
+				break L
+			}
 		}
 	}
 	m.l.RUnlock()
 
 	m.l.Lock()
 	for _, v := range shouldDelete {
-		num++
 		delete(m.m, v)
+		num++
 	}
 
 	m.l.Unlock()
@@ -617,4 +655,122 @@ func lengthOf(l *sync.RWMutex, mp map[string]Value) int {
 	l.RLock()
 	defer l.RUnlock()
 	return len(mp)
+}
+
+func clearExpire(l *sync.RWMutex, m map[string]Value) int {
+	var shouldDelete = make([]string, 0, 10)
+
+	l.RLock()
+	for k, v := range m {
+		if v.isExpire() {
+			shouldDelete = append(shouldDelete, k)
+		}
+	}
+	l.RUnlock()
+
+	l.Lock()
+	for _, v := range shouldDelete {
+		delete(m, v)
+	}
+	l.Unlock()
+
+	return len(shouldDelete)
+}
+
+func setm(l *sync.RWMutex, m map[string]Value, key string, value interface{}, ext int64, offset int64, exp int64, nx bool) {
+	l.Lock()
+	defer l.Unlock()
+
+	newValue := Value{
+		v:   value,
+		exp: exp,
+
+		execAt: ext,
+		offset: offset,
+	}
+
+	v, exist := m[key]
+
+	// 当未过期，并且已存在时，nx不操作
+	if exist && !v.isExpire() && nx == true {
+		return
+	}
+
+	// 不存在时，设置新值
+	if !exist {
+		m[key] = newValue
+		return
+	}
+
+	// 已失效时，设置新值
+	if v.isExpire() {
+		m[key] = newValue
+		return
+	}
+
+	// 比新key后执行，则设置新值
+	if v.FormerThan(newValue) {
+		m[key] = newValue
+		return
+	}
+
+	// 否则不操作
+	return
+}
+
+func deletem(l *sync.RWMutex, m map[string]Value, key string, ext int64) {
+	l.Lock()
+	defer l.Unlock()
+
+	v, exist := m[key]
+
+	if !exist {
+		return
+	}
+
+	if v.isExpire() {
+		delete(m, key)
+		return
+	}
+
+	// 存储值的执行时间，小于ext时，才允许删。大于时，不能删
+	if v.execAt < ext {
+		delete(m, key)
+		return
+	}
+	return
+}
+
+func (m *Map) mirrorOf(key string) (interface{}, bool) {
+
+	m.gRLock()
+	mv, mexist := m.m[key]
+
+	wv, wexist := m.write[key]
+
+	dv, dexist := m.del[key]
+	m.gRUnlock()
+
+	if !mexist && !wexist {
+		return nil, false
+	}
+
+	nv := newestV(mv, wv)
+
+	if !dexist {
+		return nv.v, true
+	}
+
+	if dv.FormerThan(nv) {
+		return nv.v, true
+	}
+
+	return nil, false
+}
+
+func newestV(v1, v2 Value) Value {
+	if v1.FormerThan(v2) {
+		return v2
+	}
+	return v1
 }

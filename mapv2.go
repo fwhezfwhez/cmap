@@ -37,30 +37,31 @@ func NewMapV2(hash func(string) int64, slotNum int, intervald time.Duration) *Ma
 	return mv2
 }
 
-type debugger struct{
+type debugger struct {
 	slotIndex int
-	hashN int
+	hashN     int
 }
-func (mv2 *MapV2) Set(key string, value interface{}, d *debugger){
+
+func (mv2 *MapV2) Set(key string, value interface{}) {
 	n := mv2.hash(key)
-	d.hashN =int(n)
-	d.slotIndex = int(n &int64(mv2.len))
 	mv2.slots[n%int64(mv2.len)].Set(key, value)
 }
 func (mv2 *MapV2) SetEx(key string, value interface{}, seconds int) {
-	mv2.getslot(key).Set(key, value)
+	mv2.getslot(key).SetEx(key, value, seconds)
 }
 func (mv2 *MapV2) SetNx(key string, value interface{}) {
 	mv2.getslot(key).SetNx(key, value)
 }
-func (mv2 *MapV2) Get(key string, d *debugger) (interface{}, bool) {
+
+func (mv2 *MapV2) SetExNx(key string, value interface{}, seconds int) {
+	mv2.getslot(key).SetExNx(key, value, seconds)
+}
+func (mv2 *MapV2) Get(key string) (interface{}, bool) {
 
 	n := mv2.hash(key)
-	d.hashN =int(n)
-	d.slotIndex = int(n &int64(mv2.len))
+
 	return mv2.slots[n%int64(mv2.len)].Get(key)
 }
-
 
 func (mv2 *MapV2) Delete(key string) {
 	mv2.getslot(key).Delete(key)
@@ -69,7 +70,7 @@ func (mv2 *MapV2) Delete(key string) {
 func (mv2 *MapV2) getslot(key string) *Map {
 	n := mv2.hash(key)
 
-	i := n%int64(mv2.len)
+	i := n % int64(mv2.len)
 	return mv2.slots[i]
 }
 
@@ -84,4 +85,11 @@ func (mv2 *MapV2) mapd(interval time.Duration) {
 			time.Sleep(interval)
 		}
 	}()
+}
+
+func (mv2 *MapV2) PrintDetailOf(key string) string {
+	n := mv2.hash(key)
+
+	i := n % int64(mv2.len)
+	return mv2.slots[i].PrintDetailOf(key)
 }

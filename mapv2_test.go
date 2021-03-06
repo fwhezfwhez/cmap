@@ -11,73 +11,130 @@ import (
 
 func TestNewMapV2(t *testing.T) {
 	wg := sync.WaitGroup{}
-	wg.Add(10000)
-
 	var mv2 = NewMapV2(nil, 15, 10*5*time.Second)
 
-	for i := 0; i < 10000; i ++ {
+	for i := 0; i < 10; i ++ {
 
+		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			var ds, dg debugger
 			var key = "hello" + strconv.Itoa(i)
 
-			// mv2.Set(key, int(5), &ds)
-			//v, _ := mv2.Get(key, &dg)
-
-			mv2.slots[0].Set(key, int(5))
-			v, _ := mv2.slots[0].Get(key)
+			mv2.Set(key, int(5))
+			v, _ := mv2.Get(key)
 			if v == nil {
-				fmt.Println(mv2.slots[dg.slotIndex].PrintDetailOf(key))
-				fmt.Println(key, dg, ds)
+				fmt.Println(mv2.PrintDetailOf(key))
 				os.Exit(1)
 			}
 			if v.(int) != 5 {
-				panic("bad f")
+				panic("bad f1")
 			}
 		}(i)
 
-		//go func() {
-		//	defer wg.Done()
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			var key = "hello2" + strconv.Itoa(i)
+
+			mv2.SetEx(key, int(5), 1)
+			v, _ := mv2.Get(key)
+			if v.(int) != 5 {
+				panic("bad f2 5")
+			}
+
+			time.Sleep(1 * time.Second)
+
+			v, _ = mv2.Get(key)
+			if v != nil {
+				fmt.Println(key)
+				fmt.Println(v)
+				fmt.Println(mv2.PrintDetailOf(key))
+				panic("bad f2 nil")
+			}
+
+		}(i)
+
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+
+			key := fmt.Sprintf("%s:%d", "hello3", i)
+			mv2.SetNx(key, int(5))
+			v, _ := mv2.Get(key)
+			if v.(int) != 5 {
+				panic("bad f3 5")
+			}
+
+			mv2.SetNx(key, int(8))
+			v, _ = mv2.Get(key)
+			if v.(int) != 5 {
+				panic("bad f3 8")
+			}
+
+			mv2.SetExNx(key, int(10), 1)
+
+			v, _ = mv2.Get(key)
+			if v.(int) != 5 {
+				panic("bad f3 10")
+			}
+
+			time.Sleep(1 * time.Second)
+			v, _ = mv2.Get(key)
+			if v.(int) != 5 {
+				panic("bad f3 10")
+			}
+
+			key4 := key + "exnx" + strconv.Itoa(i)
+			mv2.SetExNx(key4, int(11), 2)
+
+			v, _ = mv2.Get(key4)
+			if v.(int) != 11 {
+				panic("bad f4 11")
+			}
+
+			mv2.SetExNx(key4, int(12), 9)
+			v, _ = mv2.Get(key4)
+			if v.(int) != 11 {
+				panic("bad f4 11")
+			}
+
+			time.Sleep(2 * time.Second)
+			v, _ = mv2.Get(key4)
+			if v != nil {
+				panic("bad f4 11")
+			}
+		}(i)
 		//
-		//	mv2.SetEx("hello2", int(5), 15)
-		//	v, _ := mv2.Get("hello2")
-		//	if v.(int) != 5 {
-		//		panic("bad f")
-		//	}
-		//}()
-		//
-		//go func() {
-		//	defer wg.Done()
-		//
-		//	mv2.SetNx("hello3", int(5))
-		//	v, _ := mv2.Get("hello3")
-		//	if v.(int) != 5 {
-		//		panic("bad f")
-		//	}
-		//
-		//	mv2.SetNx("hello3", int(8))
-		//	v, _ = mv2.Get("hello3")
-		//	if v.(int) != 5 {
-		//		panic("bad f")
-		//	}
-		//}()
-		//
-		//go func() {
-		//	defer wg.Done()
-		//
-		//	mv2.SetNx("hello4", int(5))
-		//
-		//	mv2.Delete("hello4")
-		//	_, exist := mv2.Get("hello4")
-		//	if exist == true {
-		//		panic("bad f4")
-		//	}
-		//}()
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+
+			key := fmt.Sprintf("%s:%d", "hello5", i)
+			mv2.SetEx(key, 15, 7)
+			mv2.SetNx(key, 15)
+
+			time.Sleep(7 * time.Second)
+			v, _ := mv2.Get(key)
+			if v != nil {
+				panic("bad f5 15")
+			}
+			mv2.SetEx(key, 15, 1)
+			mv2.Set(key, 16)
+			time.Sleep(1 * time.Second)
+			v, _ = mv2.Get(key)
+			if v.(int) != 16 {
+				panic("bad f5 16")
+			}
+
+			mv2.Delete(key)
+			_, exist := mv2.Get(key)
+			if exist == true {
+				panic("bad delete")
+			}
+		}(i)
 
 	}
 	wg.Wait()
-
 }
 
 func TestNewMap1(t *testing.T) {

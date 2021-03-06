@@ -12,8 +12,10 @@ import (
 func TestNewMapV2(t *testing.T) {
 	wg := sync.WaitGroup{}
 	wg.Add(10000)
+
+	var mv2 = NewMapV2(nil, 15, 10*5*time.Second)
+
 	for i := 0; i < 10000; i ++ {
-		var mv2 = NewMapV2(nil, 15, 10*5*time.Second)
 
 		go func(i int) {
 			defer wg.Done()
@@ -82,16 +84,16 @@ func TestNewMap1(t *testing.T) {
 	var mv2 = NewMap()
 
 	wg := sync.WaitGroup{}
-	wg.Add(20000)
+	wg.Add(100001)
 
-	for i := 0; i < 10000; i ++ {
+	for i := 0; i < 1; i ++ {
 		func() {
 			defer wg.Done()
 			go mv2.ClearExpireKeys()
 		}()
 	}
 
-	for i := 0; i < 10000; i ++ {
+	for i := 0; i < 100000; i ++ {
 
 		go func(i int) {
 			defer wg.Done()

@@ -93,6 +93,8 @@ const (
 //    map.del change to read-only and data in m.del will sync to map.m then cleared
 //    map.dirty are first be cleared and then synchronizing data from map.m and block new write request, after sync job done, finish all writing request.
 type Map struct {
+	clearing int32
+
 	deltal *sync.RWMutex // 在增量复制时的锁
 
 	modl *sync.RWMutex
@@ -318,6 +320,22 @@ func (m *Map) Get(key string) (interface{}, bool) {
 	//	os.Exit(1)
 	//}
 
+	m.modl.RLock()
+	defer m.modl.RUnlock()
+
+	if m.isBusyWrapedBymodl() {
+		return getFrom(m.dl, m.dirty, key)
+	}
+
+	if m.isFree2WrapedBymodl() {
+		return getFrom(m.l, m.m, key)
+	}
+
+	m.deltal.RLock()
+
+	defer m.deltal.RUnlock()
+	return getFrom(m.l, m.m, key)
+
 	return m.mirrorOf(key)
 }
 
@@ -328,9 +346,20 @@ func (m *Map) Delete(key string) {
 
 	m.modl.RLock()
 	defer m.modl.RUnlock()
-	if !m.isBusyWrapedBymodl() {
+	if m.isFree2WrapedBymodl() {
 		// free时， 删m和dir,其中，dir是异步删
 		deletem(m.l, m.m, key, ext)
+
+		go func() {
+			deletem(m.dl, m.dirty, key, ext)
+		}()
+		return
+	}
+
+	if m.isFree1WrapedBymodl() {
+		m.deltal.RLock()
+		deletem(m.l, m.m, key, ext)
+		m.deltal.RUnlock()
 
 		go func() {
 			deletem(m.dl, m.dirty, key, ext)
@@ -502,12 +531,11 @@ func (m *Map) Len() int {
 // operation of read will use Map.dirty.
 // After clear job has been done, Map.dirty will be cleared and copy from Map.m, Map.write will be unwritenable and data in Map.write will sync to Map.m.
 func (m *Map) ClearExpireKeys() int {
-
-	if m.IsBusy() {
-		// on clearing job, another clear job do nothing
-		// returned cleared key number is not concurrently consistent, because m.mode is not considered locked.
+	v := atomic.AddInt32(&m.clearing, 1)
+	if v != 1 {
 		return 0
 	}
+	defer atomic.AddInt32(&m.clearing, -1)
 
 	// 在busy态删除m过期数据后进入free1态
 	n := m.clearExpireKeys()

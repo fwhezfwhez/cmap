@@ -76,13 +76,12 @@ func (mv2 *MapV2) getslot(key string) *Map {
 // keep
 func (mv2 *MapV2) mapd(interval time.Duration) {
 	go func() {
-		//for {
-		//	for i, _ := range mv2.slots {
-		//		mv2.slots[i].ClearExpireKeys()
-		//		time.Sleep(10 * time.Second)
-		//	}
-		//	time.Sleep(interval)
-		//}
-		mv2.slots[0].ClearExpireKeys()
+		for {
+			for i, _ := range mv2.slots {
+				mv2.slots[i].ClearExpireKeys()
+				time.Sleep(10 * time.Second)
+			}
+			time.Sleep(interval)
+		}
 	}()
 }

@@ -258,7 +258,7 @@ func BenchmarkSyncMapGet(b *testing.B) {
 }
 
 // BenchmarkMapSetParallel-4   	  500000	      4020 ns/op	    6434 B/op	      40 allocs/op
-// go test -benchmem -run=^$ cmap -bench ^(BenchmarkMapSetParallel)$
+// go test -run ^BenchmarkMapSetParallel$ -bench ^BenchmarkMapSetParallel$ -benchmem
 func BenchmarkMapSetParallel(b *testing.B) {
 	m := newMap()
 	b.RunParallel(func(pb *testing.PB) {
@@ -320,8 +320,8 @@ func BenchmarkSyncMapGetParallel(b *testing.B) {
 	})
 }
 
-// BenchmarkMapClearExpireKeys-4   	   50000	     26080 ns/op	   11713 B/op	       1 allocs/op
-// go test -benchmem -run=^$ cmap -bench ^(BenchmarkMapClearExpireKeys)$
+// BenchmarkMapClearExpireKeys-4           100000000               18.3 ns/op             0 B/op          0 allocs/op
+// go test -run ^BenchmarkMapClearExpireKeys$ -bench ^BenchmarkMapClearExpireKeys$ -benchmem
 func BenchmarkMapClearExpireKeys(b *testing.B) {
 	m := newMap()
 	for i := 0; i < 1000000; i++ {

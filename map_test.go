@@ -73,7 +73,7 @@ func TestDelete2(t *testing.T) {
 	// return
 
 	wg := sync.WaitGroup{}
-	wg.Add(100000*2 + 100000)
+	wg.Add(100000*2 + 1000)
 	for i := 0; i < 100000; i++ {
 		go func(i int) {
 			defer wg.Done()
@@ -81,7 +81,7 @@ func TestDelete2(t *testing.T) {
 			go func(i int, setdone chan bool) {
 				defer wg.Done()
 				<-setdone
-				time.Sleep(1 * time.Second)
+				//time.Sleep(1 * time.Second)
 				m.Delete(strconv.Itoa(i))
 
 				v, _ := m.Get(strconv.Itoa(i))
@@ -103,7 +103,7 @@ func TestDelete2(t *testing.T) {
 			setdone <- true
 		}(i)
 	}
-	for i := 0; i < 100000; i++ {
+	for i := 0; i < 1000; i++ {
 		go func(i int) {
 			defer wg.Done()
 			m.ClearExpireKeys()

@@ -358,6 +358,9 @@ func (m *Map) Delete(key string) {
 		func(ext int64) {
 			fmt.Printf("del dir %s \n", key)
 			deletem(m.dl, m.dirty, key, ext)
+
+			deletem(m.wl, m.write, key, ext)
+
 		}(ext)
 		return
 	}
@@ -368,6 +371,8 @@ func (m *Map) Delete(key string) {
 		m.deltal.Unlock()
 
 		func() {
+			// 因为free1时，读取mirror可能会读write，所以write也要清理
+			deletem(m.wl, m.write, key, ext)
 			deletem(m.dl, m.dirty, key, ext)
 		}()
 		return

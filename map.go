@@ -241,7 +241,7 @@ func (m *Map) set(key string, value interface{}, seconds int, nx bool) {
 	if m.isFree2WrapedBymodl() {
 		setm(m.l, m.m, key, value, ext, offset, exp, nx)
 
-		go func(ext int64, offset int64) {
+		func(ext int64, offset int64) {
 			setm(m.dl, m.dirty, key, value, ext, offset, exp, nx)
 		}(ext, offset)
 		return
@@ -251,7 +251,7 @@ func (m *Map) set(key string, value interface{}, seconds int, nx bool) {
 		m.deltal.Lock()
 		setm(m.l, m.m, key, value, ext, offset, exp, nx)
 		m.deltal.Unlock()
-		go func(ext int64, offset int64) {
+		func(ext int64, offset int64) {
 			setm(m.dl, m.dirty, key, value, ext, offset, exp, nx)
 		}(ext, offset)
 		return

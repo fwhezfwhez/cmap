@@ -39,33 +39,33 @@ GET-benchmark-b.N
 
 | cases | n | ns/op | B/ob | allocs/op | link |
 | ---- | --- | --- | -- | --- |----- |
-| cmap | 5000000 | 345 ns/op |24 B/op | 1 allocs/op | [cmap](https://github.com/fwhezfwhez/cmap/blob/6df9dfc8a3c29eb19c0a72cbd7d3917185c5ecfa/map_test.go#L232) |
-| sync.map | 3000000 | 347 ns/op | 24 B/op | 2 allocs/op | [sync.map](https://github.com/fwhezfwhez/cmap/blob/6df9dfc8a3c29eb19c0a72cbd7d3917185c5ecfa/map_test.go#L247) |
-| chan-map | 100000 |15670 ns/op | 6112 B/op | 14 allocs/op | [chan-map](https://github.com/fwhezfwhez/cmap/blob/6df9dfc8a3c29eb19c0a72cbd7d3917185c5ecfa/chan-map_test.go#L56) |
+| cmap | 5000000 | 345 ns/op |24 B/op | 1 allocs/op ||
+| sync.map | 3000000 | 347 ns/op | 24 B/op | 2 allocs/op | |
+| chan-map | 100000 |15670 ns/op | 6112 B/op | 14 allocs/op | |
 
 GET-parallel-pb
 
 | cases | n | ns/op | B/ob | allocs/op | link |
 | ---- | --- | --- | -- | --- |----- |
-| cmap | 500000 | 3409 ns/op | 5399 B/op | 3 allocs/op | [cmap](https://github.com/fwhezfwhez/cmap/blob/6df9dfc8a3c29eb19c0a72cbd7d3917185c5ecfa/map_test.go#L290) |
-| sync.map | 200000 | 5359 ns/op | 5399 B/op | 3 allocs/op | [sync.map](https://github.com/fwhezfwhez/cmap/blob/6df9dfc8a3c29eb19c0a72cbd7d3917185c5ecfa/map_test.go#L308) |
-| chan-map | 500000	| 5483 ns/op | 6111 B/op | 14 allocs/op | [chan-map](https://github.com/fwhezfwhez/cmap/blob/6df9dfc8a3c29eb19c0a72cbd7d3917185c5ecfa/chan-map_test.go#L108) |
+| cmap | 500000 | 3409 ns/op | 5399 B/op | 3 allocs/op | |
+| sync.map | 200000 | 5359 ns/op | 5399 B/op | 3 allocs/op | |
+| chan-map | 500000	| 5483 ns/op | 6111 B/op | 14 allocs/op | |
 
 SET-benchmark-b.N
 
 | cases | n | ns/op | B/ob | allocs/op | link |
 | ---- | --- | --- | -- | --- |----- |
-| cmap | 1000000 | 1820 ns/op | 617,B/op | 5 allocs/op | [cmap](https://github.com/fwhezfwhez/cmap/blob/6df9dfc8a3c29eb19c0a72cbd7d3917185c5ecfa/map_test.go#L213) |
-| sync.map | 1000000 | 1931 ns/op | 243 B/op | 9 allocs/op | [sync.map](https://github.com/fwhezfwhez/cmap/blob/6df9dfc8a3c29eb19c0a72cbd7d3917185c5ecfa/map_test.go#L222) |
-| chan-map | 500000	| 4140 ns/op | 1043 B/op | 14 allocs/op | [chan-map](https://github.com/fwhezfwhez/cmap/blob/6df9dfc8a3c29eb19c0a72cbd7d3917185c5ecfa/chan-map_test.go#L40) |
+| cmap | 1000000 | 1820 ns/op | 617,B/op | 5 allocs/op |  |
+| sync.map | 1000000 | 1931 ns/op | 243 B/op | 9 allocs/op | |
+| chan-map | 500000	| 4140 ns/op | 1043 B/op | 14 allocs/op | |
 
 SET-parallel-pb
 
 | cases | n | ns/op | B/ob | allocs/op | link |
 | ---- | --- | --- | -- | --- |----- |
-| cmap | 500000 | 4020 ns/op | 6434 B/op | 40 allocs/op | [cmap](https://github.com/fwhezfwhez/cmap/blob/6df9dfc8a3c29eb19c0a72cbd7d3917185c5ecfa/map_test.go#L262) |
-| sync.map | 500000 | 4100 ns/op | 6464 B/op | 42 allocs/op | [sync.map](https://github.com/fwhezfwhez/cmap/blob/6df9dfc8a3c29eb19c0a72cbd7d3917185c5ecfa/map_test.go#L276) |
-| chan-map | 300000 | 6186 ns/op | 7164 B/op | 51 allocs/op | [chan-map](https://github.com/fwhezfwhez/cmap/blob/6df9dfc8a3c29eb19c0a72cbd7d3917185c5ecfa/chan-map_test.go#L90) |
+| cmap | 500000 | 4020 ns/op | 6434 B/op | 40 allocs/op |  |
+| sync.map | 500000 | 4100 ns/op | 6464 B/op | 42 allocs/op | |
+| chan-map | 300000 | 6186 ns/op | 7164 B/op | 51 allocs/op | |
 
 ## start
 go get github.com/fwhezfwhez/cmap
@@ -106,7 +106,7 @@ As soon as mode from `M_FREE1` to `M_FREE2`, `m` will return to use and then cle
 | write| no | yes | yes | yes |
 
 
-Why map is so fast?
+** Why map is so fast? **
 
 There should be  two jobs costing much time: `clear all m's expired keys`, `clear all dirty's expired keys`.
 
@@ -117,6 +117,15 @@ While clearing dirty, it's already in M_FREE2, write `m` and read `m` without bl
 Where blocking, when data are migrating from `write`/`del` to `m`, set/del operations will get blocked. Apparently these data are few.
 
 We transfer costs of clearing all expire keys into costs of migrating all increasing keys/deleting keys.This is why cmap is fast.
+
+** Why design mapv2? **
+map is fast however all keys share a common race lock. This is improvable when two keys are irrelevant totally. Thus mapv2 is working like
+`hash` + `map`.
+
+Only when two keys are hit into a same map by hash function, they hit a race lock.
+
+To lower its rate, it's good to set bigger number of mapv2.slotnum.
+
 
 ## Start
 `go get github.com/fwhezfwhez/cmap`

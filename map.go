@@ -660,10 +660,10 @@ func (m *Map) MLen() int {
 // range function returns bool value
 // if false,  will stop range process
 func (m *Map) Range(f func(key string, value interface{}) bool) {
-	if m.IsBusy() {
-		rangem(m.dl, m.dirty, f)
-	} else {
+	if m.IsFree2() {
 		rangem(m.l, m.m, f)
+	} else {
+		rangem(m.dl, m.dirty, f)
 	}
 }
 

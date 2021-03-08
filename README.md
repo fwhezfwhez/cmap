@@ -114,6 +114,10 @@ In this package, while clearing m, in M_BUSY mode, data read from dirty without 
 
 While clearing dirty, it's already in M_FREE2, write `m` and read `m` without blocking.
 
+Where blocking, when data are migrating from `write`/`del` to `m`, set/del operations will get blocked. Apparently these data are few.
+
+We transfer costs of clearing all expire keys into costs of migrating all increasing keys/deleting keys.This is why cmap is fast.
+
 ## Start
 `go get github.com/fwhezfwhez/cmap`
 

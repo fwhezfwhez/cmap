@@ -538,10 +538,11 @@ func (m *Map) Len() int {
 // After clear job has been done, Map.dirty will be cleared and copy from Map.m, Map.write will be unwritenable and data in Map.write will sync to Map.m.
 func (m *Map) ClearExpireKeys() int {
 	v := atomic.AddInt32(&m.clearing, 1)
+	defer atomic.AddInt32(&m.clearing, -1)
+
 	if v != 1 {
 		return 0
 	}
-	defer atomic.AddInt32(&m.clearing, -1)
 
 	// 在busy态删除m过期数据后进入free1态
 	n := m.clearExpireKeys()
@@ -566,7 +567,7 @@ func (m *Map) ClearExpireKeys() int {
 	// sync deleted operation from Map.del
 	m.l.Lock()
 
-	m.dll.Lock()
+	m.dll.RLock()
 	for k, v := range m.del {
 		v2, ok := m.m[k]
 		if !ok {
@@ -577,14 +578,22 @@ func (m *Map) ClearExpireKeys() int {
 		}
 	}
 
-	m.del = make(map[string]Value)
-	m.dll.Unlock()
+	m.dll.RUnlock()
 
 	m.l.Unlock()
 
 	m.deltal.Unlock()
 
 	m.setFree2()
+
+	// 进入free2时，清理write和del,dir
+	m.dll.Lock()
+	m.del = make(map[string]Value)
+	m.dll.Unlock()
+
+	m.wl.Lock()
+	m.write = make(map[string]Value)
+	m.wl.Unlock()
 
 	func() {
 		clearExpire(m.dl, m.dirty)

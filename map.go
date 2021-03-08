@@ -73,7 +73,7 @@ func (v Value) detail() map[string]interface{} {
 // When map.mode == M_FREE, data are writable and readable using map.m.
 // When map.mode == M_BUSY, data are writable and readble using map.dirty, writable map.write and writable map.del
 const (
-	M_FREE1 = 2 // free1-同步中, m 同步write和del，m必须阻塞，防止幻读
+	M_FREE1 = 2 // free1-同步中, m 同步write和del
 	M_FREE2 = 0 // free2-同步完成, m可以独立承担读写
 	M_BUSY  = 1
 )
@@ -372,6 +372,8 @@ func (m *Map) Delete(key string) {
 		}()
 		return
 	}
+	// 因为free1时，读取mirror可能会读write，所以write也要清理
+	deletem(m.wl, m.write, key, ext)
 
 	// busy时，要删除dir, 并且追加命令进del
 	deletem(m.dl, m.dirty, key, ext)
@@ -475,7 +477,6 @@ func (m *Map) PrintDetailOf(key string) string {
 		fmt.Println(e.Error())
 		return ""
 	}
-	fmt.Println(string(b))
 	return string(b)
 }
 

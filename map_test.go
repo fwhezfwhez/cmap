@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -73,7 +74,7 @@ func TestDelete2(t *testing.T) {
 	// return
 
 	wg := sync.WaitGroup{}
-	wg.Add(100000*2 + 1000)
+	wg.Add(100000*2 + 1)
 	for i := 0; i < 100000; i++ {
 		go func(i int) {
 			defer wg.Done()
@@ -87,13 +88,15 @@ func TestDelete2(t *testing.T) {
 				v, _ := m.Get(strconv.Itoa(i))
 				if v != nil {
 					fmt.Println(m.PrintDetailOf(strconv.Itoa(i)))
-					panic("del api irccect")
+					panic("sd del api irccect")
+					os.Exit(1)
 				}
 
-				v, _ = m.Get(strconv.Itoa(i)+"set")
+				v, _ = m.Get(strconv.Itoa(i) + "set")
 				if v.(int) != int(i) {
 					fmt.Println(m.PrintDetailOf(strconv.Itoa(i)))
-					panic("del api irccect")
+					panic("sg del api irccect")
+					os.Exit(1)
 				}
 
 			}(i, setdone)
@@ -103,7 +106,7 @@ func TestDelete2(t *testing.T) {
 			setdone <- true
 		}(i)
 	}
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < 1; i++ {
 		go func(i int) {
 			defer wg.Done()
 			m.ClearExpireKeys()
@@ -119,7 +122,6 @@ func TestDelete3(t *testing.T) {
 	m := sync.Map{}
 	m.Store("username1", "fengtao")
 
-
 	// m.PrintDetail()
 
 	m.Delete("username1")
@@ -133,7 +135,7 @@ func TestDelete3(t *testing.T) {
 	// return
 
 	wg := sync.WaitGroup{}
-	wg.Add(100000*2)
+	wg.Add(100000 * 2)
 	for i := 0; i < 100000; i++ {
 		go func(i int) {
 			defer wg.Done()
@@ -469,7 +471,7 @@ func BenchmarkSyncMapGetParallel(b *testing.B) {
 	})
 }
 
-// BenchmarkMapClearExpireKeys-4           100000000               18.3 ns/op             0 B/op          0 allocs/op
+// BenchmarkMapClearExpireKeys-4   	  500000	      3343 ns/op
 // go test -run ^BenchmarkMapClearExpireKeys$ -bench ^BenchmarkMapClearExpireKeys$ -benchmem
 func BenchmarkMapClearExpireKeys(b *testing.B) {
 	m := newMap()
@@ -522,4 +524,38 @@ func TestSelect(t *testing.T) {
 		fmt.Println("time out ")
 	case a <- 5:
 	}
+}
+
+func TestConcurrentatomic(t *testing.T) {
+	var a int32 = 0
+	var m = make(map[string]int, 0)
+
+	var times int32
+	wg := sync.WaitGroup{}
+	f := func() {
+		defer wg.Done()
+		rs := atomic.AddInt32(&a, 1)
+		defer atomic.AddInt32(&a, -1)
+
+		if rs != 1 {
+			return
+		}
+
+		atomic.AddInt32(&times, 1)
+		m["1"] = 1
+		_ = m["1"]
+	}
+
+
+	wg.Add(200000)
+	for i := 0; i < 100000; i++ {
+		go f()
+	}
+	for i := 0; i < 100000; i++ {
+		go f()
+	}
+
+	wg.Wait()
+
+	fmt.Println(times)
 }

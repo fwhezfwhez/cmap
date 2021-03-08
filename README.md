@@ -10,7 +10,7 @@
 
 cmap is a concurrently safe map in golang. Providing two stable map type with apis:
 
-**map type**
+**map types**
 
 - map   `cmap.NewMap`
 - mapv2 `cmap.NewMapV2`
@@ -67,8 +67,17 @@ SET-parallel-pb
 | sync.map | 500000 | 4100 ns/op | 6464 B/op | 42 allocs/op | [sync.map](https://github.com/fwhezfwhez/cmap/blob/6df9dfc8a3c29eb19c0a72cbd7d3917185c5ecfa/map_test.go#L276) |
 | chan-map | 300000 | 6186 ns/op | 7164 B/op | 51 allocs/op | [chan-map](https://github.com/fwhezfwhez/cmap/blob/6df9dfc8a3c29eb19c0a72cbd7d3917185c5ecfa/chan-map_test.go#L90) |
 
-## Analysis
-mode: M_FREE
+## start
+go get github.com/fwhezfwhez/cmap
+
+## 1. Anal
+### 1.1 map
+map is concurrently safe map. It consists of [m, dirty, write, del] and has three states in runtime: M_FREE1, M_FREE2, M_BUSY.
+m, dirty, write, del are all golang official map. In different states, they work differently.
+
+mode: M_FREE2
+At this moment, `m` is totally working. All commands are available to `m` and all `write`/`del` operations will do the same to dirty.
+`write`, `del` are resting and no use.
 
 | x=mem(m.m, m.dirty, m.write, m.del) <br> y=-state(readable, writable) | m.m | m.dirty | m.write | m.del |
 | --- | --- | --- | --- |------ |
@@ -76,11 +85,34 @@ mode: M_FREE
 | write| yes | yes | no | no |
 
 mode: M_BUSY
+At this moment, it means a process of clearing expire keys of `m` are working. Now `m` is disable and dirty is put into use.
+Now commands read from `dirty`, write to `dirty`. New keys are write to `write` and deleting options are write to `del`.
+Since dirty share all read and write in M_FREE2 Mode, thus dirty provides consistent data to callers.
 
 | x=mem(m.m, m.dirty, m.write, m.del) <br> y=-state(readable, writable) | m.m | m.dirty | m.write | m.del |
 | --- | --- | --- |-- | ---- |
 | read | no | yes | no | no |
 | write| no | yes | yes | yes |
+
+mode: M_FREE1
+At this moment, it means clearing expire keys of `m` has finished, but it now should be migrated data from `write` and `del`.
+Still `dirty` provides read and write.
+
+As soon as mode from `M_FREE1` to `M_FREE2`, `m` will return to use and then clear dirty expired keys and reset `write` and `del`
+
+| x=mem(m.m, m.dirty, m.write, m.del) <br> y=-state(readable, writable) | m.m | m.dirty | m.write | m.del |
+| --- | --- | --- |-- | ---- |
+| read | no | yes | no | no |
+| write| no | yes | yes | yes |
+
+
+Why map is so fast?
+
+There should be  two jobs costing much time: `clear all m's expired keys`, `clear all dirty's expired keys`.
+
+In this package, while clearing m, in M_BUSY mode, data read from dirty without blocking. write to `del`/`write` without blocking.
+
+While clearing dirty, it's already in M_FREE2, write `m` and read `m` without blocking.
 
 ## Start
 `go get github.com/fwhezfwhez/cmap`

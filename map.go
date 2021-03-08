@@ -248,9 +248,9 @@ func (m *Map) set(key string, value interface{}, seconds int, nx bool) {
 	}
 
 	if m.isFree1WrapedBymodl() {
-		m.deltal.RLock()
+		m.deltal.Lock()
 		setm(m.l, m.m, key, value, ext, offset, exp, nx)
-		m.deltal.RUnlock()
+		m.deltal.Unlock()
 		go func(ext int64, offset int64) {
 			setm(m.dl, m.dirty, key, value, ext, offset, exp, nx)
 		}(ext, offset)
@@ -331,15 +331,20 @@ func (m *Map) Get(key string) (interface{}, bool) {
 		return getFrom(m.l, m.m, key)
 	}
 
-	m.deltal.RLock()
+	if m.isFree1WrapedBymodl() {
+		return m.mirrorOf(key)
+	}
+	//
+	//m.deltal.RLock()
+	//
+	//defer m.deltal.RUnlock()
+	//return getFrom(m.l, m.m, key)
 
-	defer m.deltal.RUnlock()
-	return getFrom(m.l, m.m, key)
-
-	return m.mirrorOf(key)
+	// return m.mirrorOf(key)
+	return nil, false
 }
 
-// Delete
+// Delete todo, bug delete fail
 func (m *Map) Delete(key string) {
 	offset := m.offsetIncr()
 	ext := time.Now().UnixNano()
@@ -350,18 +355,19 @@ func (m *Map) Delete(key string) {
 		// free时， 删m和dir,其中，dir是异步删
 		deletem(m.l, m.m, key, ext)
 
-		go func() {
+		func(ext int64) {
+			fmt.Printf("del dir %s \n", key)
 			deletem(m.dl, m.dirty, key, ext)
-		}()
+		}(ext)
 		return
 	}
 
 	if m.isFree1WrapedBymodl() {
-		m.deltal.RLock()
+		m.deltal.Lock()
 		deletem(m.l, m.m, key, ext)
-		m.deltal.RUnlock()
+		m.deltal.Unlock()
 
-		go func() {
+		func() {
 			deletem(m.dl, m.dirty, key, ext)
 		}()
 		return
@@ -580,10 +586,7 @@ func (m *Map) ClearExpireKeys() int {
 
 	m.setFree2()
 
-	// 因为dir不论busy还是free，都在提供write。所以dir需要和m一样，清除过期数据
-	// dir里busy时积压的潜在失效key，会保留到free时清理
-	// 因为在free时，全程由m提供读写，所以dir的清理操作，可以异步完成
-	go func() {
+	func() {
 		clearExpire(m.dl, m.dirty)
 	}()
 	return n
@@ -747,25 +750,29 @@ func setm(l *sync.RWMutex, m map[string]Value, key string, value interface{}, ex
 }
 
 func deletem(l *sync.RWMutex, m map[string]Value, key string, ext int64) {
-	l.Lock()
-	defer l.Unlock()
 
-	v, exist := m[key]
+	l.RLock()
+	_, exist := m[key]
+	l.RUnlock()
 
 	if !exist {
 		return
 	}
 
-	if v.isExpire() {
-		delete(m, key)
-		return
-	}
+	l.Lock()
+	delete(m, key)
+	l.Unlock()
 
-	// 存储值的执行时间，小于ext时，才允许删。大于时，不能删
-	if v.execAt < ext {
-		delete(m, key)
-		return
-	}
+	//if v.isExpire() {
+	//	delete(m, key)
+	//	return
+	//}
+	//
+	//// 存储值的执行时间，小于ext时，才允许删。大于时，不能删
+	//if v.execAt < ext {
+	//	delete(m, key)
+	//	return
+	//}
 	return
 }
 

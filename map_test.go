@@ -14,14 +14,37 @@ import (
 func TestMap(t *testing.T) {
 	m := newMap()
 	m.Set("username1", "fengtao")
-	m.SetEx("username", "fengtao", 5)
-	m.SetEx("hehe", "xxx", 6)
 
+	v, _ := m.Get("username1")
+	if v.(string) != "fengtao" {
+		panic("setapi ircorrect")
+	}
+
+	m.SetEx("username", "fengtao", 5)
+	m.SetExNx("username", "xxx", 9)
+
+	time.Sleep(1 * time.Second)
+	v, _ = m.Get("username")
+	if v.(string) != "fengtao" {
+		panic("setexnxapi ircorrect")
+	}
 	time.Sleep(6 * time.Second)
 
 	fmt.Println(m.ClearExpireKeys())
 
-	fmt.Println(m.Len())
+	v, _ = m.Get("username")
+	if v != nil {
+		panic("setexapi ircorrect")
+		return
+	}
+
+	m.ClearExpireKeys()
+
+	if len(m.m) != 1 {
+		panic("clear irc")
+	}
+	m.PrintDetail()
+
 }
 
 func TestDelete2(t *testing.T) {
@@ -36,31 +59,105 @@ func TestDelete2(t *testing.T) {
 	m.Delete("username1")
 	m.Delete("hehe")
 
+	time.Sleep(1 * time.Second)
+
+	if len(m.m) != 0 && len(m.dirty) != 0 {
+		panic("del irc")
+		return
+	}
+
+	// 	m.PrintDetail()
+	// return
+
+	// select {}
+	// return
+
 	wg := sync.WaitGroup{}
-	wg.Add(100000*2 + 1000)
+	wg.Add(100000*2 + 100000)
 	for i := 0; i < 100000; i++ {
 		go func(i int) {
 			defer wg.Done()
 			var setdone = make(chan bool, 1)
-			go func(j int, setdone chan bool) {
+			go func(i int, setdone chan bool) {
 				defer wg.Done()
 				<-setdone
 				time.Sleep(1 * time.Second)
-				m.Delete(strconv.Itoa(j))
+				m.Delete(strconv.Itoa(i))
+
+				v, _ := m.Get(strconv.Itoa(i))
+				if v != nil {
+					fmt.Println(m.PrintDetailOf(strconv.Itoa(i)))
+					panic("del api irccect")
+				}
+
+				v, _ = m.Get(strconv.Itoa(i)+"set")
+				if v.(int) != int(i) {
+					fmt.Println(m.PrintDetailOf(strconv.Itoa(i)))
+					panic("del api irccect")
+				}
+
 			}(i, setdone)
 
 			m.Set(strconv.Itoa(i), i)
+			m.Set(strconv.Itoa(i)+"set", int(i))
 			setdone <- true
 		}(i)
 	}
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < 100000; i++ {
 		go func(i int) {
 			defer wg.Done()
 			m.ClearExpireKeys()
 		}(i)
 	}
 	wg.Wait()
-	m.PrintDetail()
+
+	//m.ClearExpireKeys()
+	//m.PrintDetail()
+}
+
+func TestDelete3(t *testing.T) {
+	m := sync.Map{}
+	m.Store("username1", "fengtao")
+
+
+	// m.PrintDetail()
+
+	m.Delete("username1")
+
+	time.Sleep(1 * time.Second)
+
+	// 	m.PrintDetail()
+	// return
+
+	// select {}
+	// return
+
+	wg := sync.WaitGroup{}
+	wg.Add(100000*2)
+	for i := 0; i < 100000; i++ {
+		go func(i int) {
+			defer wg.Done()
+			var setdone = make(chan bool, 1)
+			go func(i int, setdone chan bool) {
+				defer wg.Done()
+				<-setdone
+				time.Sleep(1 * time.Second)
+				m.Delete(strconv.Itoa(i))
+
+				v, _ := m.Load(strconv.Itoa(i))
+				if v != nil {
+					panic("del api irccect")
+				}
+			}(i, setdone)
+
+			m.Store(strconv.Itoa(i), i)
+			setdone <- true
+		}(i)
+	}
+	wg.Wait()
+
+	//m.ClearExpireKeys()
+	//m.PrintDetail()
 }
 
 func TestMap3(t *testing.T) {
@@ -245,7 +342,7 @@ func BenchmarkMapGet(b *testing.B) {
 // BenchmarkMapv2Get-4      3000000               478 ns/op              25 B/op          2 allocs/op
 // go test -run ^BenchmarkMapv2Get$ -bench ^BenchmarkMapv2Get$ -benchmem
 func BenchmarkMapv2Get(b *testing.B) {
-	m := NewMapV2(nil, 5, time.Minute)
+	m := NewMapV2(nil, 8, time.Minute)
 	time.Sleep(1 * time.Second)
 	for i := 0; i < 1000000; i++ {
 		m.Set(fmt.Sprintf("username-%d", i), fmt.Sprintf("cmap-%d", i))
@@ -301,10 +398,11 @@ func BenchmarkSyncMapSetParallel(b *testing.B) {
 	})
 }
 
-// BenchmarkMapv2SetParallel-4       200000              6955 ns/op            6486 B/op         41 allocs/op
+// BenchmarkMapv2SetParallel-4       300000              6718 ns/op            6484 B/op         41 allocs/op
 // go test -run ^BenchmarkMapv2SetParallel$ -bench ^BenchmarkMapv2SetParallel$ -benchmem
 func BenchmarkMapv2SetParallel(b *testing.B) {
-	m := NewMapV2(nil, 30, 10*time.Minute)
+	m := NewMapV2(nil, 8, 10*time.Minute)
+	time.Sleep(1 * time.Second)
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
@@ -337,10 +435,12 @@ func BenchmarkMapGetParallel(b *testing.B) {
 // BenchmarkMapGetParallel-4        500000              6480 ns/op            5399 B/op          3 allocs/op
 // go test -run ^BenchmarkMapv2GetParallel$ -bench ^BenchmarkMapv2GetParallel$ -benchmem
 func BenchmarkMapv2GetParallel(b *testing.B) {
-	m := NewMapV2(nil, 5, 5*time.Minute)
+	m := NewMapV2(nil, 8, 5*time.Minute)
 	for i := 0; i < 1000000; i++ {
 		m.Set(fmt.Sprintf("key-%d", i), i)
 	}
+
+	time.Sleep(1 * time.Second)
 
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {

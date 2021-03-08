@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// All slot-map apis is testing and thus should not put into product use.
 const (
 	Sl_Is_Extending = 2
 )

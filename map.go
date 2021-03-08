@@ -352,7 +352,6 @@ func (m *Map) Delete(key string) {
 	m.modl.RLock()
 	defer m.modl.RUnlock()
 	if m.isFree2WrapedBymodl() {
-		// free时， 删m和dir,其中，dir是异步删
 		deletem(m.l, m.m, key, ext)
 
 		func(ext int64) {
@@ -371,13 +370,11 @@ func (m *Map) Delete(key string) {
 		m.deltal.Unlock()
 
 		func() {
-			// 因为free1时，读取mirror可能会读write，所以write也要清理
 			deletem(m.wl, m.write, key, ext)
 			deletem(m.dl, m.dirty, key, ext)
 		}()
 		return
 	}
-	// 因为free1时，读取mirror可能会读write，所以write也要清理
 	deletem(m.wl, m.write, key, ext)
 
 	// busy时，要删除dir, 并且追加命令进del

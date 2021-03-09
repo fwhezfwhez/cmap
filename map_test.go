@@ -48,6 +48,76 @@ func TestMap(t *testing.T) {
 
 }
 
+func TestIncr(t *testing.T) {
+	m := NewMap()
+
+	rs := m.Incr("user-incr")
+
+	if rs != 1 {
+		panic("incr wrong")
+	}
+
+	rs = m.IncrBy("user-incr-by", 10)
+	if rs != 10 {
+		panic("incr-by wrong")
+	}
+
+	rs = m.Decr("user-decr")
+
+	if rs != -1 {
+		panic("decr wrong")
+	}
+
+	rs = m.DecrBy("user-decr-by", 13)
+
+	if rs != -13 {
+		panic("decr wrong")
+	}
+
+	w := sync.WaitGroup{}
+
+	w.Add(100000)
+	for i:=0;i<100000;i++ {
+		go func(){
+			defer w.Done()
+			m.ClearExpireKeys()
+		}()
+	}
+
+
+	w.Add(100000*2)
+	for i := 0; i < 100000; i++ {
+		go func(i int) {
+			defer w.Done()
+
+			var done = make(chan bool, 1)
+
+			m.IncrByEx(fmt.Sprintf("%d", i), 13, 5)
+
+			go func(i int) {
+				defer w.Done()
+				<-done
+				v, exist := m.Get(fmt.Sprintf("%d", i))
+
+				if v.(int) != 13 || !exist {
+					panic("incr wrong")
+				}
+
+				time.Sleep(6 * time.Second)
+				v, exist = m.Get(fmt.Sprintf("%d", i))
+
+				if v != nil || exist {
+					panic("incr wrong")
+				}
+			}(i)
+
+			done <- true
+		}(i)
+	}
+	w.Wait()
+
+}
+
 func TestDelete2(t *testing.T) {
 	m := newMap()
 	m.Set("username1", "fengtao")
@@ -545,7 +615,6 @@ func TestConcurrentatomic(t *testing.T) {
 		m["1"] = 1
 		_ = m["1"]
 	}
-
 
 	wg.Add(200000)
 	for i := 0; i < 100000; i++ {

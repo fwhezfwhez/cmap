@@ -1,5 +1,7 @@
 package cmap
 
+import "fmt"
+
 var (
 	aucCRCHi = []byte{
 		0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x01, 0xC0, 0x80, 0x41,
@@ -63,4 +65,77 @@ func UsMBCRC16(pucFrame []byte) int {
 		ucCRCHi = int(aucCRCLo[iIndex])
 	}
 	return ucCRCHi<<8 | ucCRCLo
+}
+
+func incr(i interface{}, delta int) (interface{}, error) {
+	if i == nil {
+		return 0 + delta, nil
+	}
+	switch v := i.(type) {
+	case int:
+		return v + delta, nil
+	case int32:
+		return v + int32(delta), nil
+	case int64:
+		return v + int64(delta), nil
+	case int8:
+		return v + int8(delta), nil
+
+	case uint:
+		if delta > 0 {
+			return v + uint(delta), nil
+		}
+		return v - uint(-delta), nil
+	case uint8:
+		if delta > 0 {
+			return v + uint8(delta), nil
+		}
+		return v - uint8(-delta), nil
+	case uint16:
+		if delta > 0 {
+			return v + uint16(delta), nil
+		}
+		return v - uint16(-delta), nil
+	case uint32:
+		if delta > 0 {
+			return v + uint32(delta), nil
+		}
+		return v - uint32(-delta), nil
+	case uint64:
+		if delta > 0 {
+			return v + uint64(delta), nil
+		}
+		return v - uint64(-delta), nil
+	default:
+		return 0, fmt.Errorf("not a integer type '%v'", i)
+	}
+}
+
+func Int64(i interface{}) int64 {
+	if i == nil {
+		return 0
+	}
+	switch v := i.(type) {
+	case int:
+		return int64(v)
+	case int32:
+		return int64(v)
+	case int64:
+		return int64(v)
+	case int8:
+		return int64(v)
+
+	case uint:
+		return int64(v)
+	case uint8:
+		return int64(v)
+	case uint16:
+		return int64(v)
+	case uint32:
+		return int64(v)
+	case uint64:
+		return int64(v)
+	default:
+		return 0
+	}
 }

@@ -223,7 +223,27 @@ func (m *Map) Set(key string, value interface{}) {
 	m.set(key, value, -1, false)
 }
 
-func (m *Map) set(key string, value interface{}, seconds int, nx bool) {
+type Op struct {
+	enable bool
+
+	incrBy incrByType
+}
+
+type incrType struct {
+	enable bool
+}
+type incrByType struct {
+	enable bool
+	delta  int
+}
+
+func (m *Map) set(key string, value interface{}, seconds int, nx bool, ops ... Op) interface{} {
+	var op Op
+	if len(ops) > 0 {
+		op = ops[0]
+		op.enable = true
+	}
+
 	var exp int64
 	if seconds == -1 {
 		exp = -1
@@ -240,28 +260,97 @@ func (m *Map) set(key string, value interface{}, seconds int, nx bool) {
 
 	// free2 时，写入m，写入dir
 	if m.isFree2WrapedBymodl() {
-		setm(m.l, m.m, key, value, ext, offset, exp, nx)
-
-		func(ext int64, offset int64) {
+		// set类型的命令
+		if op.enable == false {
+			setm(m.l, m.m, key, value, ext, offset, exp, nx)
 			setm(m.dl, m.dirty, key, value, ext, offset, exp, nx)
-		}(ext, offset)
-		return
+			return value
+		}
+
+		// incrBy类型的命令
+		if op.incrBy.enable == true {
+			rs := casm(m.l, m.m, key, func(old interface{}) (interface{}, error) {
+				rs, e := incr(old, op.incrBy.delta)
+				if e != nil {
+					return nil, fmt.Errorf("err '%s' for key '%s'", e.Error(), key)
+				}
+				return rs, nil
+			}, exp, ext, offset)
+
+			casm(m.dl, m.dirty, key, func(old interface{}) (interface{}, error) {
+				rs, e := incr(old, op.incrBy.delta)
+				if e != nil {
+					return nil, fmt.Errorf("err '%s' for key '%s'", e.Error(), key)
+				}
+				return rs, nil
+			}, exp, ext, offset)
+			return rs
+		}
+
 	}
 
 	// 同步中时，写dir，阻塞m
 	if m.isFree1WrapedBymodl() {
-		m.deltal.RLock()
-		setm(m.l, m.m, key, value, ext, offset, exp, nx)
-		m.deltal.RUnlock()
-		func(ext int64, offset int64) {
+
+		if op.enable == false {
+			m.deltal.RLock()
+			setm(m.l, m.m, key, value, ext, offset, exp, nx)
+			m.deltal.RUnlock()
 			setm(m.dl, m.dirty, key, value, ext, offset, exp, nx)
-		}(ext, offset)
-		return
+			return nil
+		}
+
+		if op.incrBy.enable == true {
+			m.deltal.RLock()
+			casm(m.l, m.m, key, func(old interface{}) (interface{}, error) {
+				rs, e := incr(old, op.incrBy.delta)
+				if e != nil {
+					return nil, fmt.Errorf("err '%s' for key '%s'", e.Error(), key)
+				}
+				return rs, nil
+			}, exp, ext, offset)
+			m.deltal.RUnlock()
+			rs := casm(m.dl, m.dirty, key, func(old interface{}) (interface{}, error) {
+				rs, e := incr(old, op.incrBy.delta)
+				if e != nil {
+					return nil, fmt.Errorf("err '%s' for key '%s'", e.Error(), key)
+				}
+				return rs, nil
+			}, exp, ext, offset)
+			return rs
+		}
 	}
 
-	// busy时，写入dir和write
-	setm(m.dl, m.dirty, key, value, ext, offset, exp, nx)
-	setm(m.wl, m.write, key, value, ext, offset, exp, nx)
+	if op.enable == false {
+
+		setm(m.dl, m.dirty, key, value, ext, offset, exp, nx)
+		setm(m.wl, m.write, key, value, ext, offset, exp, nx)
+		return nil
+	}
+
+	if op.incrBy.enable == true {
+		// busy时，写入dir和write
+		rs := casm(m.dl, m.dirty, key, func(old interface{}) (interface{}, error) {
+			rs, e := incr(old, op.incrBy.delta)
+			if e != nil {
+				return nil, fmt.Errorf("err '%s' for key '%s'", e.Error(), key)
+			}
+			return rs, nil
+		}, exp, ext, offset)
+
+		// busy时，写入dir和write
+		casm(m.wl, m.write, key, func(old interface{}) (interface{}, error) {
+			rs, e := incr(old, op.incrBy.delta)
+			if e != nil {
+				return nil, fmt.Errorf("err '%s' for key '%s'", e.Error(), key)
+			}
+			return rs, nil
+		}, exp, ext, offset)
+		return rs
+	}
+
+	return nil
+
 }
 
 // set,del,setnx,setex will increase map.offset.
@@ -291,6 +380,103 @@ func (m *Map) SetNx(key string, value interface{}) {
 // If key exist, do nothing, otherwise set key,value into map
 func (m *Map) SetExNx(key string, value interface{}, seconds int) {
 	m.set(key, value, seconds, true)
+}
+
+// increase key by 1.
+// If key is not an integer type, will do nothing
+func (m *Map) Incr(key string) int64 {
+	rs := m.set(key, nil, -1, false, Op{
+		incrBy: struct {
+			enable bool
+			delta  int
+		}{enable: true, delta: 1},
+	})
+
+	return Int64(rs)
+}
+
+// increase key by one with expire seconds
+func (m *Map) IncrEx(key string, seconds int) int64 {
+	rs := m.set(key, nil, seconds, false, Op{
+		incrBy: struct {
+			enable bool
+			delta  int
+		}{enable: true, delta: 1},
+	})
+
+	return Int64(rs)
+}
+
+// increase key by n
+func (m *Map) IncrBy(key string, n int) int64 {
+	rs := m.set(key, nil, -1, false, Op{
+		incrBy: struct {
+			enable bool
+			delta  int
+		}{enable: true, delta: n},
+	})
+
+	return Int64(rs)
+}
+
+// increase key by n with expire seconds
+func (m *Map) IncrByEx(key string, n int, seconds int) int64 {
+	rs := m.set(key, nil, seconds, false, Op{
+		incrBy: struct {
+			enable bool
+			delta  int
+		}{enable: true, delta: n},
+	})
+
+	return Int64(rs)
+}
+
+// decrease key by one
+func (m *Map) Decr(key string) int64 {
+	rs := m.set(key, nil, -1, false, Op{
+		incrBy: struct {
+			enable bool
+			delta  int
+		}{enable: true, delta: -1},
+	})
+
+	return Int64(rs)
+}
+
+// decrease key by one with seconds expired
+func (m *Map) DecrEx(key string, seconds int) int64 {
+	rs := m.set(key, nil, seconds, false, Op{
+		incrBy: struct {
+			enable bool
+			delta  int
+		}{enable: true, delta: -1},
+	})
+
+	return Int64(rs)
+}
+
+// decrease key by n
+func (m *Map) DecrBy(key string, n int) int64 {
+	rs := m.set(key, nil, -1, false, Op{
+		incrBy: struct {
+			enable bool
+			delta  int
+		}{enable: true, delta: -n},
+	})
+
+	return Int64(rs)
+}
+
+// decrease key by n with expired seconds
+func (m *Map) DecrByEx(key string, n int, seconds int) int64 {
+	rs := m.set(key, nil, seconds, false, Op{
+		incrBy: struct {
+			enable bool
+			delta  int
+		}{enable: true, delta: -n},
+	})
+
+	return Int64(rs)
 }
 
 // If key is expired or not existed, return nil
@@ -814,4 +1000,43 @@ func newestV(v1, v2 Value) Value {
 		return v2
 	}
 	return v1
+}
+
+func casm(l *sync.RWMutex, m map[string]Value, key string, f func(old interface{}) (interface{}, error), exp int64, ext int64, offset int64) interface{} {
+	l.Lock()
+	defer l.Unlock()
+
+	oldv, exist := m[key]
+	if !exist {
+		neww, e := f(oldv.v)
+		if e != nil {
+			return nil
+		}
+
+		newValue := Value{
+			v:   neww,
+			exp: exp,
+
+			execAt: ext,
+			offset: offset,
+		}
+		m[key] = newValue
+		return newValue.v
+	}
+
+	neww, e := f(oldv.v)
+	if e != nil {
+		return nil
+	}
+
+	newValue := Value{
+		v:   neww,
+		exp: exp,
+
+		execAt: ext,
+		offset: offset,
+	}
+	m[key] = newValue
+
+	return neww
 }

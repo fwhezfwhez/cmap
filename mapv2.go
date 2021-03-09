@@ -63,6 +63,26 @@ func (mv2 *MapV2) Get(key string) (interface{}, bool) {
 	return mv2.slots[n%int64(mv2.len)].Get(key)
 }
 
+func (mv2 *MapV2) Incr(key string) int64 {
+	return mv2.getslot(key).Incr(key)
+}
+func (mv2 *MapV2) IncrBy(key string, delta int) int64 {
+	return mv2.getslot(key).IncrBy(key, delta)
+}
+func (mv2 *MapV2) IncrByEx(key string, delta int, seconds int) int64 {
+	return mv2.getslot(key).IncrByEx(key, delta, seconds)
+}
+
+func (mv2 *MapV2) Decr(key string) int64 {
+	return mv2.getslot(key).Decr(key)
+}
+func (mv2 *MapV2) DecrBy(key string, delta int) int64 {
+	return mv2.getslot(key).DecrBy(key, delta)
+}
+func (mv2 *MapV2) DecrByEx(key string, delta int, seconds int) int64 {
+	return mv2.getslot(key).DecrByEx(key, delta, seconds)
+}
+
 func (mv2 *MapV2) Delete(key string) {
 	mv2.getslot(key).Delete(key)
 }

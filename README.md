@@ -19,6 +19,9 @@ cmap is a concurrently safe map in golang. Providing two stable map type with ap
 
 - SET
 - GET
+- Incr
+- IncrBy
+- IncrByEx
 - SETEX
 - SETNX
 - SETEXNX

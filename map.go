@@ -234,10 +234,11 @@ func (m *Map) set(key string, value interface{}, seconds int, nx bool) {
 	ext := time.Now().UnixNano()
 	offset := m.offsetIncr()
 
+	// 发生set时，不会出现状态切换
 	m.modl.RLock()
 	defer m.modl.RUnlock()
 
-	// free2 时，写入m，异步写入dir
+	// free2 时，写入m，写入dir
 	if m.isFree2WrapedBymodl() {
 		setm(m.l, m.m, key, value, ext, offset, exp, nx)
 
@@ -247,10 +248,11 @@ func (m *Map) set(key string, value interface{}, seconds int, nx bool) {
 		return
 	}
 
+	// 同步中时，写dir，阻塞m
 	if m.isFree1WrapedBymodl() {
-		m.deltal.Lock()
+		m.deltal.RLock()
 		setm(m.l, m.m, key, value, ext, offset, exp, nx)
-		m.deltal.Unlock()
+		m.deltal.RUnlock()
 		func(ext int64, offset int64) {
 			setm(m.dl, m.dirty, key, value, ext, offset, exp, nx)
 		}(ext, offset)
@@ -293,54 +295,38 @@ func (m *Map) SetExNx(key string, value interface{}, seconds int) {
 
 // If key is expired or not existed, return nil
 func (m *Map) Get(key string) (interface{}, bool) {
-	//m.modl.RLock()
-	//defer m.modl.RUnlock()
-	//
-	//var message string
-	//var rs interface{}
-	//var exist bool
-	//if m.isFree2WrapedBymodl() {
-	//	rs, exist = getFrom(m.l, m.m, key)
-	//	message = fmt.Sprintf("get from m, %d, %v %v", m.mode, rs, exist)
-	//} else if m.isFree1WrapedBymodl() {
-	//	// 增量同步时，无法get
-	//	m.deltal.RLock()
-	//	rs, exist = getFrom(m.l, m.m, key)
-	//	message = fmt.Sprintf("get from m, %d, %v %v", m.mode, rs, exist)
-	//	m.deltal.RUnlock()
-	//
-	//} else {
-	//	rs, exist = getFrom(m.dl, m.dirty, key)
-	//	message = fmt.Sprintf("get from dir, %d %v %v", m.mode, rs, exist)
-	//}
-	//
-	//if rs == nil || exist == false {
-	//	fmt.Println(message)
-	//	m.PrintDetailOf(key)
-	//	os.Exit(1)
-	//}
 
+	// Get过程中。
+	// m 必须在mod保护态下，才能get
+	// dirty不论何时，都可以被get
 	m.modl.RLock()
-	defer m.modl.RUnlock()
 
-	if m.isBusyWrapedBymodl() {
-		return getFrom(m.dl, m.dirty, key)
-	}
+	var shouldRUnlock bool = true
 
+	defer func() {
+		if shouldRUnlock {
+			m.modl.RUnlock()
+		}
+	}()
+
+	// m free时，读取m
 	if m.isFree2WrapedBymodl() {
 		return getFrom(m.l, m.m, key)
 	}
 
-	if m.isFree1WrapedBymodl() {
-		return m.mirrorOf(key)
-	}
+	m.modl.RUnlock()
+	shouldRUnlock = false
+	return getFrom(m.dl, m.dirty, key)
+	//// m繁忙时，读取dirty
+	//if m.isBusyWrapedBymodl() {
+	//	return getFrom(m.dl, m.dirty, key)
+	//}
 	//
-	//m.deltal.RLock()
-	//
-	//defer m.deltal.RUnlock()
-	//return getFrom(m.l, m.m, key)
+	//// m 处于迁移中,读取dir
+	//if m.isFree1WrapedBymodl() {
+	//	return getFrom(m.dl, m.dirty, key)
+	//}
 
-	// return m.mirrorOf(key)
 	return nil, false
 }
 
@@ -355,27 +341,29 @@ func (m *Map) Delete(key string) {
 		deletem(m.l, m.m, key, ext)
 
 		func(ext int64) {
-			fmt.Printf("del dir %s \n", key)
+			//fmt.Printf("del dir %s \n", key)
 			deletem(m.dl, m.dirty, key, ext)
 
-			deletem(m.wl, m.write, key, ext)
+			// deletem(m.wl, m.write, key, ext)
 
 		}(ext)
 		return
 	}
 
 	if m.isFree1WrapedBymodl() {
-		m.deltal.Lock()
-		deletem(m.l, m.m, key, ext)
-		m.deltal.Unlock()
-
+		// free1时，m1不能提供使用
 		func() {
-			deletem(m.wl, m.write, key, ext)
+			m.deltal.RLock()
+			deletem(m.l, m.m, key, ext)
+			m.deltal.RUnlock()
+		}()
+		func() {
+			// 	deletem(m.wl, m.write, key, ext)
 			deletem(m.dl, m.dirty, key, ext)
 		}()
 		return
 	}
-	deletem(m.wl, m.write, key, ext)
+	// deletem(m.wl, m.write, key, ext)
 
 	// busy时，要删除dir, 并且追加命令进del
 	deletem(m.dl, m.dirty, key, ext)
@@ -540,6 +528,8 @@ func (m *Map) Len() int {
 // operation of read will use Map.dirty.
 // After clear job has been done, Map.dirty will be cleared and copy from Map.m, Map.write will be unwritenable and data in Map.write will sync to Map.m.
 func (m *Map) ClearExpireKeys() int {
+
+	// 利用atomic，确保高并发下，只会有一个ClearExpireKeys被执行
 	v := atomic.AddInt32(&m.clearing, 1)
 	defer atomic.AddInt32(&m.clearing, -1)
 
@@ -547,8 +537,17 @@ func (m *Map) ClearExpireKeys() int {
 		return 0
 	}
 
-	// 在busy态删除m过期数据后进入free1态
+	// 将模式切到busy下
+	// 因为在读写删进行时，mod是禁切换的。
+	// 所以能够切到busy,必然是读写删都在入口阻住了。
+	m.setBusy()
+
+	// 置为busy时，读写删自动放行。读取写入删除都切换到对应的模式。m此时将保持不对外不可用
+
 	n := m.clearExpireKeys()
+
+	m.modl.Lock()
+	m.mode = M_FREE1
 
 	m.deltal.Lock()
 	m.l.Lock()
@@ -584,8 +583,9 @@ func (m *Map) ClearExpireKeys() int {
 	m.dll.RUnlock()
 
 	m.l.Unlock()
-
 	m.deltal.Unlock()
+
+	m.modl.Unlock()
 
 	m.setFree2()
 
@@ -598,9 +598,8 @@ func (m *Map) ClearExpireKeys() int {
 	m.write = make(map[string]Value)
 	m.wl.Unlock()
 
-	func() {
-		clearExpire(m.dl, m.dirty)
-	}()
+	clearExpire(m.dl, m.dirty)
+
 	return n
 }
 
@@ -615,11 +614,6 @@ func (m *Map) clearExpireKeys() int {
 // After clear expired keys in m, m will change into free auto..ly.
 // in free mode, m.del and m.write will not provides read nor write, m.dirty will not read.
 func (m *Map) clearExpireKeysWithDepth(depth int) int {
-	// set m busy
-	m.setBusy()
-
-	defer m.setFree1()
-
 	var num int
 
 	// keys should be deleted
@@ -666,10 +660,10 @@ func (m *Map) MLen() int {
 // range function returns bool value
 // if false,  will stop range process
 func (m *Map) Range(f func(key string, value interface{}) bool) {
-	if m.IsBusy() {
-		rangem(m.dl, m.dirty, f)
-	} else {
+	if m.IsFree2() {
 		rangem(m.l, m.m, f)
+	} else {
+		rangem(m.dl, m.dirty, f)
 	}
 }
 

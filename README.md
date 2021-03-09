@@ -79,6 +79,7 @@ map is concurrently safe map. It consists of [m, dirty, write, del] and has thre
 m, dirty, write, del are all golang official map. In different states, they work differently.
 
 mode: M_FREE2
+
 At this moment, `m` is totally working. All commands are available to `m` and all `write`/`del` operations will do the same to dirty.
 `write`, `del` are resting and no use.
 
@@ -88,6 +89,7 @@ At this moment, `m` is totally working. All commands are available to `m` and al
 | write| yes | yes | no | no |
 
 mode: M_BUSY
+
 At this moment, it means a process of clearing expire keys of `m` are working. Now `m` is disable and dirty is put into use.
 Now commands read from `dirty`, write to `dirty`. New keys are write to `write` and deleting options are write to `del`.
 Since dirty share all read and write in M_FREE2 Mode, thus dirty provides consistent data to callers.
@@ -98,6 +100,7 @@ Since dirty share all read and write in M_FREE2 Mode, thus dirty provides consis
 | write| no | yes | yes | yes |
 
 mode: M_FREE1
+
 At this moment, it means clearing expire keys of `m` has finished, but it now should be migrated data from `write` and `del`.
 Still `dirty` provides read and write.
 

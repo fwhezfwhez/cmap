@@ -13,12 +13,15 @@ type MapV2 struct {
 	hash  func(string) int64 // default hash is crc16 mechanism. Users can set your own hash function by `mv2.SetHash = func(string) int`
 	slots []*Map             // slots are all maps. Keys will first get hashed and then decide to read/write which slots
 	len   int
+
+	clear chan struct{} // close mapv2 will send clear to finish mapd goroutine
 }
 
 func NewMapV2(hash func(string) int64, slotNum int, intervald time.Duration) *MapV2 {
 	var mv2 = &MapV2{
 		hash:  hash,
 		slots: make([]*Map, slotNum, slotNum),
+		clear: make(chan struct{}, 1),
 	}
 
 	for i, _ := range mv2.slots {
@@ -40,6 +43,10 @@ func NewMapV2(hash func(string) int64, slotNum int, intervald time.Duration) *Ma
 type debugger struct {
 	slotIndex int
 	hashN     int
+}
+
+func (mv2 *MapV2) Clear() {
+	mv2.clear <- struct{}{}
 }
 
 func (mv2 *MapV2) Set(key string, value interface{}) {
@@ -98,11 +105,15 @@ func (mv2 *MapV2) getslot(key string) *Map {
 func (mv2 *MapV2) mapd(interval time.Duration) {
 	go func() {
 		for {
-			for i, _ := range mv2.slots {
-				mv2.slots[i].ClearExpireKeys()
-				time.Sleep(10 * time.Second)
+			select {
+			case <-time.After(interval):
+				for i, _ := range mv2.slots {
+					mv2.slots[i].ClearExpireKeys()
+					time.Sleep(10 * time.Second)
+				}
+			case <-mv2.clear:
+				return
 			}
-			time.Sleep(interval)
 		}
 	}()
 }

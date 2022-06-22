@@ -628,3 +628,13 @@ func TestConcurrentatomic(t *testing.T) {
 
 	fmt.Println(times)
 }
+
+
+func TestGetWithExpireSecond(t *testing.T) {
+	var m = NewMap()
+	m.SetEx("a","b",6)
+
+	time.Sleep(2*time.Second)
+
+	fmt.Println(m.GetWithExpireSecond("a"))
+}

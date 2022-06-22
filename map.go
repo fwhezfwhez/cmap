@@ -481,6 +481,11 @@ func (m *Map) DecrByEx(key string, n int, seconds int) int64 {
 
 // If key is expired or not existed, return nil
 func (m *Map) Get(key string) (interface{}, bool) {
+	v, _, exist := m.GetWithExpireSecond(key)
+	return v, exist
+}
+
+func (m *Map) GetWithExpireSecond(key string) (interface{}, int, bool) {
 
 	// Get过程中。
 	// m 必须在mod保护态下，才能get
@@ -503,17 +508,6 @@ func (m *Map) Get(key string) (interface{}, bool) {
 	m.modl.RUnlock()
 	shouldRUnlock = false
 	return getFrom(m.dl, m.dirty, key)
-	//// m繁忙时，读取dirty
-	//if m.isBusyWrapedBymodl() {
-	//	return getFrom(m.dl, m.dirty, key)
-	//}
-	//
-	//// m 处于迁移中,读取dir
-	//if m.isFree1WrapedBymodl() {
-	//	return getFrom(m.dl, m.dirty, key)
-	//}
-
-	return nil, false
 }
 
 // Delete todo, bug delete fail
@@ -656,27 +650,34 @@ func (m *Map) PrintDetailOf(key string) string {
 	return string(b)
 }
 
-func getFrom(l *sync.RWMutex, m map[string]Value, key string) (interface{}, bool) {
+func getFrom(l *sync.RWMutex, m map[string]Value, key string) (interface{}, int, bool) {
 	l.RLock()
 	value, ok := m[key]
 	l.RUnlock()
 
 	if !ok {
-		return nil, false
+		return nil, 0, false
 	}
 
 	if value.exp == -1 {
-		return value.v, true
+		return value.v, -1, true
 	}
 
-	if time.Now().UnixNano() >= value.exp {
+	var now = time.Now()
+	if now.UnixNano() >= value.exp {
 		l.Lock()
 		delete(m, key)
 		l.Unlock()
-		return nil, false
+		return nil, 0, false
 	}
 
-	return value.v, true
+	expiresecond := nanoToSecond(value.exp - now.UnixNano())
+
+	return value.v, expiresecond, true
+}
+
+func nanoToSecond(nanovalue int64) int {
+	return int(nanovalue / (1000000000))
 }
 
 func (m *Map) setBusy() {

@@ -70,6 +70,15 @@ func (mv2 *MapV2) Get(key string) (interface{}, bool) {
 	return mv2.slots[n%int64(mv2.len)].Get(key)
 }
 
+// 获取某个key，并返回它的失效时间。
+// 失效时间为-1时，表示无期限
+func (mv2 *MapV2) GetWithExpireSeconds(key string) (interface{},int, bool) {
+
+	n := mv2.hash(key)
+
+	return mv2.slots[n%int64(mv2.len)].GetWithExpireSecond(key)
+}
+
 func (mv2 *MapV2) Incr(key string) int64 {
 	return mv2.getslot(key).Incr(key)
 }

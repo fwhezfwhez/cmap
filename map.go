@@ -481,29 +481,7 @@ func (m *Map) DecrByEx(key string, n int, seconds int) int64 {
 
 // If key is expired or not existed, return nil
 func (m *Map) Get(key string) (interface{}, bool) {
-
-	// Get过程中。
-	// m 必须在mod保护态下，才能get
-	// dirty不论何时，都可以被get
-	m.modl.RLock()
-
-	var shouldRUnlock bool = true
-
-	defer func() {
-		if shouldRUnlock {
-			m.modl.RUnlock()
-		}
-	}()
-
-	// m free时，读取m
-	if m.isFree2WrapedBymodl() {
-		v, _, exist := getFrom(m.l, m.m, key)
-		return v, exist
-	}
-
-	m.modl.RUnlock()
-	shouldRUnlock = false
-	v, _, exist := getFrom(m.dl, m.dirty, key)
+	v, _, exist := m.GetWithExpireSecond(key)
 	return v, exist
 }
 

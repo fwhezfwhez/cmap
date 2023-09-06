@@ -1,4 +1,4 @@
-module gitee.com/fwhezfwhez/cmap
+module github.com/fwhezfwhez/cmap
 
 go 1.20
 

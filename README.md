@@ -10,6 +10,12 @@
 
 cmap is a concurrently safe map in golang. Providing two stable map type with apis:
 
+## Declare
+
+cmap will migrate to gitee.com in case github.com doesn't provide accessibility for China.
+
+https://gitee.com/fwhezfwhez/cmap
+
 **map types**
 
 - map   `cmap.NewMap`

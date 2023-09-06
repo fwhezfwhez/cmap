@@ -1,6 +1,8 @@
 package cmap
 
-import "time"
+import (
+	"time"
+)
 
 // mapv2 is upgraded basing on map
 // map now is fast and concurrently safe,but all keys will be put into a common race env. Apparently it's not proper if two irrelevant keys are operated at meanwhile to share a common lock.

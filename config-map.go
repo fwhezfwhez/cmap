@@ -32,22 +32,23 @@ func (cm *ConfigMap) refreshHistory(key string, value interface{}) {
 }
 
 func (cm *ConfigMap) onFirstUsingHistory(key string) {
-	cm.historyMap.SetEx(fmt.Sprintf("cmap:key_using_history_start_timeunix:%s", key), time.Now().Unix(), 60)
+	cm.historyMap.SetExNx(fmt.Sprintf("cmap:key_using_history_start_timeunix:%s", key), time.Now().Unix(), 60)
+	cm.setLoadTimes(key)
 }
 
 // 获取载入过的次数
-func (cm *ConfigMap) getLoadTimes(key string) int64 {
+func (cm *ConfigMap) getLoadTimes(key string) int {
 	rs, exist := cm.historyMap.Get(fmt.Sprintf("cmap:key_triger_load_times:%s", key))
 	if exist {
-		return rs.(int64)
+		return rs.(int)
 	}
 	return 0
 }
 func (cm *ConfigMap) setLoadTimes(key string) int64 {
-	rs := cm.historyMap.IncrBy(fmt.Sprintf("cmap:key_triger_load_times:%s", key), 1)
+	rs := cm.historyMap.IncrByEx(fmt.Sprintf("cmap:key_triger_load_times:%s", key), 1, 60*60*24)
 
 	if rs >= math.MaxInt64-1000000 {
-		cm.historyMap.Set(fmt.Sprintf("cmap:key_triger_load_times:%s", key), 100)
+		cm.historyMap.SetEx(fmt.Sprintf("cmap:key_triger_load_times:%s", key), 100, 60*60*24)
 	}
 	return rs
 }
@@ -125,7 +126,7 @@ func (cm *ConfigMap) Get(key string) (interface{}, bool, bool) {
 	return rs, needloading, false
 }
 
-func countneedloading(oncecount, loadtimes int64) bool {
+func countneedloading(oncecount int64, loadtimes int) bool {
 
 	// 当应用第一次启动，未载入配置时，所有请求允许直接击穿二级缓存，去读取源配置。(此场景，用redis来防止数据库击穿)
 	// 之所以放开初次载入时的击穿，是因为初次启动时，并发下，非首个请求，可能会失败

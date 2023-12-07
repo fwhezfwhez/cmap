@@ -40,7 +40,7 @@ func (cm *ConfigMap) onFirstUsingHistory(key string) {
 func (cm *ConfigMap) getLoadTimes(key string) int {
 	rs, exist := cm.historyMap.Get(fmt.Sprintf("cmap:key_triger_load_times:%s", key))
 	if exist {
-		return rs.(int)
+		return getInt(rs)
 	}
 	return 0
 }
@@ -68,13 +68,13 @@ func (cm *ConfigMap) isDeleted(key string) bool {
 	return false
 }
 
-func (cm *ConfigMap) getUsingHistoryStartUnix(key string) (int64, bool) {
+func (cm *ConfigMap) getUsingHistoryStartUnix(key string) (int, bool) {
 	startunix, exist := cm.historyMap.Get(fmt.Sprintf("cmap:key_using_history_start_timeunix:%s", key))
 	if !exist {
 		return 0, false
 	}
 
-	return startunix.(int64), true
+	return getInt(startunix), true
 }
 
 // 返回 值，是否需要loading,是否获取到有效值
@@ -112,7 +112,7 @@ func (cm *ConfigMap) Get(key string) (interface{}, bool, bool) {
 		}
 
 		// 如果从使用历史值开始，累计15秒没有完成注入，则历史值也应该被移除
-		if time.Now().Unix() > startunix+15 {
+		if time.Now().Unix() > int64(startunix+15) {
 			cm.historyMap.Delete(key)
 
 			return nil, needloading, false
@@ -121,7 +121,7 @@ func (cm *ConfigMap) Get(key string) (interface{}, bool, bool) {
 		return hist, needloading, true
 	}
 
-	// 如果都找不到，则第一条请求，会触发载入
+	// 如果都找不到，则第一条请求，触发载入会
 	// 后续请求，直接返回 找不到
 	return rs, needloading, false
 }
@@ -140,4 +140,16 @@ func countneedloading(oncecount int64, loadtimes int) bool {
 	}
 
 	return false
+}
+
+func getInt(i interface{}) int {
+	switch v := i.(type) {
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case int32:
+		return int(v)
+	}
+	return 0
 }

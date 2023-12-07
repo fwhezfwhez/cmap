@@ -17,6 +17,7 @@ type MapV2 struct {
 	len   int
 
 	clear chan struct{} // close mapv2 will send clear to finish mapd goroutine
+
 }
 
 func NewMapV2(hash func(string) int64, slotNum int, intervald time.Duration) *MapV2 {

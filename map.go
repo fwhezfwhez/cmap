@@ -3,6 +3,7 @@ package cmap
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/fwhezfwhez/errorx"
 	"math"
 	"sync"
 	"sync/atomic"
@@ -112,6 +113,9 @@ type Map struct {
 	dll    *sync.RWMutex
 	offset int64
 	del    map[string]Value
+
+	// 支持list功能
+	listLock *sync.RWMutex
 }
 
 // Help viewing map's detail.
@@ -147,6 +151,8 @@ func newMap() *Map {
 
 		dll: &sync.RWMutex{},
 		del: make(map[string]Value),
+
+		listLock: &sync.RWMutex{},
 	}
 }
 
@@ -237,7 +243,7 @@ type incrByType struct {
 	delta  int
 }
 
-func (m *Map) set(key string, value interface{}, seconds int, nx bool, ops ... Op) interface{} {
+func (m *Map) set(key string, value interface{}, seconds int, nx bool, ops ...Op) interface{} {
 	var op Op
 	if len(ops) > 0 {
 		op = ops[0]
@@ -397,6 +403,8 @@ func (m *Map) Incr(key string) int64 {
 
 // increase key by one with expire seconds
 func (m *Map) IncrEx(key string, seconds int) int64 {
+	// 通过get做失效
+	_, _ = m.get(key)
 	rs := m.set(key, nil, seconds, false, Op{
 		incrBy: struct {
 			enable bool
@@ -409,6 +417,9 @@ func (m *Map) IncrEx(key string, seconds int) int64 {
 
 // increase key by n
 func (m *Map) IncrBy(key string, n int) int64 {
+	// 通过get做失效
+	_, _ = m.get(key)
+
 	rs := m.set(key, nil, -1, false, Op{
 		incrBy: struct {
 			enable bool
@@ -421,6 +432,9 @@ func (m *Map) IncrBy(key string, n int) int64 {
 
 // increase key by n with expire seconds
 func (m *Map) IncrByEx(key string, n int, seconds int) int64 {
+	// 通过get做失效
+	_, _ = m.get(key)
+
 	rs := m.set(key, nil, seconds, false, Op{
 		incrBy: struct {
 			enable bool
@@ -433,6 +447,9 @@ func (m *Map) IncrByEx(key string, n int, seconds int) int64 {
 
 // decrease key by one
 func (m *Map) Decr(key string) int64 {
+	// 通过get做失效
+	_, _ = m.get(key)
+
 	rs := m.set(key, nil, -1, false, Op{
 		incrBy: struct {
 			enable bool
@@ -445,6 +462,9 @@ func (m *Map) Decr(key string) int64 {
 
 // decrease key by one with seconds expired
 func (m *Map) DecrEx(key string, seconds int) int64 {
+	// 通过get做失效
+	_, _ = m.get(key)
+
 	rs := m.set(key, nil, seconds, false, Op{
 		incrBy: struct {
 			enable bool
@@ -457,6 +477,9 @@ func (m *Map) DecrEx(key string, seconds int) int64 {
 
 // decrease key by n
 func (m *Map) DecrBy(key string, n int) int64 {
+	// 通过get做失效
+	_, _ = m.get(key)
+
 	rs := m.set(key, nil, -1, false, Op{
 		incrBy: struct {
 			enable bool
@@ -469,6 +492,9 @@ func (m *Map) DecrBy(key string, n int) int64 {
 
 // decrease key by n with expired seconds
 func (m *Map) DecrByEx(key string, n int, seconds int) int64 {
+	// 通过get做失效
+	_, _ = m.get(key)
+
 	rs := m.set(key, nil, seconds, false, Op{
 		incrBy: struct {
 			enable bool
@@ -478,9 +504,12 @@ func (m *Map) DecrByEx(key string, n int, seconds int) int64 {
 
 	return Int64(rs)
 }
+func (m *Map) Get(key string) (interface{}, bool) {
+	return m.get(key)
+}
 
 // If key is expired or not existed, return nil
-func (m *Map) Get(key string) (interface{}, bool) {
+func (m *Map) get(key string) (interface{}, bool) {
 
 	// Get过程中。
 	// m 必须在mod保护态下，才能get
@@ -817,7 +846,7 @@ L:
 			shouldDelete = append(shouldDelete, k)
 
 			// If hit depth of delete times, will stop range
-			offset ++
+			offset++
 			if depth > 0 && offset >= depth {
 				break L
 			}
@@ -1039,4 +1068,50 @@ func casm(l *sync.RWMutex, m map[string]Value, key string, f func(old interface{
 	m[key] = newValue
 
 	return neww
+}
+
+func (m *Map) RPushEX(key string, elem interface{}, ex int) error {
+	m.listLock.Lock()
+	defer m.listLock.Unlock()
+
+	rsi, exist := m.Get(key)
+
+	if exist {
+		clist, ok := rsi.(*clist)
+		if !ok {
+			return errorx.NewServiceError("cmap.MapV2.RPush key=%s is not list elem, cannot execute RPush", 1)
+		}
+
+		clist.RPush(elem)
+		return nil
+	}
+
+	clist := newclist()
+
+	clist.RPush(elem)
+	m.SetEx(key, clist, ex)
+	return nil
+}
+
+func (m *Map) RPushNEX(key string, ex int, elem ...interface{}) error {
+	m.listLock.Lock()
+	defer m.listLock.Unlock()
+
+	rsi, exist := m.Get(key)
+
+	if exist {
+		clist, ok := rsi.(*clist)
+		if !ok {
+			return errorx.NewServiceError("cmap.MapV2.RPush key=%s is not list elem, cannot execute RPush", 1)
+		}
+
+		clist.RPushN(elem...)
+		return nil
+	}
+
+	clist := newclist()
+
+	clist.RPushN(elem...)
+	m.SetEx(key, clist, ex)
+	return nil
 }

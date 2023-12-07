@@ -13,7 +13,7 @@ func TestNewMapV2(t *testing.T) {
 	wg := sync.WaitGroup{}
 	var mv2 = NewMapV2(nil, 15, 10*5*time.Second)
 
-	for i := 0; i < 10; i ++ {
+	for i := 0; i < 10; i++ {
 
 		wg.Add(1)
 		go func(i int) {
@@ -143,14 +143,14 @@ func TestNewMap1(t *testing.T) {
 	wg := sync.WaitGroup{}
 	wg.Add(100001)
 
-	for i := 0; i < 1; i ++ {
+	for i := 0; i < 1; i++ {
 		func() {
 			defer wg.Done()
 			go mv2.ClearExpireKeys()
 		}()
 	}
 
-	for i := 0; i < 100000; i ++ {
+	for i := 0; i < 100000; i++ {
 
 		go func(i int) {
 			defer wg.Done()
@@ -178,7 +178,7 @@ func TestNewMap1(t *testing.T) {
 }
 
 func BenchmarkNewMap1(b *testing.B) {
-	for i := 0; i < b.N; i ++ {
+	for i := 0; i < b.N; i++ {
 		var mv2 = NewMap()
 
 		func(i int) {
@@ -190,4 +190,24 @@ func BenchmarkNewMap1(b *testing.B) {
 			}
 		}(i)
 	}
+}
+
+func TestIncrEx(t *testing.T) {
+	m := NewMapV2(nil, 2, 5*time.Minute)
+
+	var once = func(key string, seconds int) bool {
+		rs := m.IncrByEx(key, 1, seconds)
+
+		if rs == 1 {
+			return true
+		}
+
+		return false
+	}
+
+	fmt.Println(once("1111", 3)) // true
+	fmt.Println(once("1111", 3)) // false
+	time.Sleep(4 * time.Second)
+	fmt.Println(once("1111", 3)) // true
+	fmt.Println(once("1111", 3)) // false
 }

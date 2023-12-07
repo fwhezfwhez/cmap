@@ -121,7 +121,7 @@ func (cm *ConfigMap) Get(key string) (interface{}, bool, bool) {
 		return hist, needloading, true
 	}
 
-	// 如果都找不到，则第一条请求，会触发载入
+	// 如果都找不到，则第一条请求，触发载入会
 	// 后续请求，直接返回 找不到
 	return rs, needloading, false
 }

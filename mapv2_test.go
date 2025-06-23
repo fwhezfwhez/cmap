@@ -11,7 +11,7 @@ import (
 
 func TestNewMapV2(t *testing.T) {
 	wg := sync.WaitGroup{}
-	var mv2 = NewMapV2(nil, 15, 10*5*time.Second)
+	var mv2 = NewMapV2(nil, 1, 10*5*time.Second)
 
 	for i := 0; i < 10; i++ {
 

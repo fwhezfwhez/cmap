@@ -12,6 +12,10 @@ import (
 	"time"
 )
 
+func TestRun(t *testing.T) {
+	t.Log(1)
+}
+
 func TestMap(t *testing.T) {
 	m := newMap()
 	m.Set("username1", "fengtao")
@@ -77,15 +81,14 @@ func TestIncr(t *testing.T) {
 	w := sync.WaitGroup{}
 
 	w.Add(100000)
-	for i:=0;i<100000;i++ {
-		go func(){
+	for i := 0; i < 100000; i++ {
+		go func() {
 			defer w.Done()
 			m.ClearExpireKeys()
 		}()
 	}
 
-
-	w.Add(100000*2)
+	w.Add(100000 * 2)
 	for i := 0; i < 100000; i++ {
 		go func(i int) {
 			defer w.Done()

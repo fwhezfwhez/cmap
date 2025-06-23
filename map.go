@@ -76,7 +76,7 @@ func (v Value) detail() map[string]interface{} {
 const (
 	M_FREE1 = 2 // free1-同步中, m 同步write和del
 	M_FREE2 = 0 // free2-同步完成, m可以独立承担读写
-	M_BUSY  = 1
+	M_BUSY  = 1 // 开始clear工作
 )
 
 // Map is concurrently safe, and faster than sync.Map.
@@ -85,15 +85,22 @@ const (
 // When calling map.ClearExpireKeys(), map will change mode into M_BUSY.
 // In B_BUSY mode, map.m is unreadable and unwritable. users read data from dirty.
 // At this moment,
-//    writing operation will write data to map.dirty, map.write
-//    deleting operation will write to map.del
+//
+//	writing operation will write data to map.dirty, map.write
+//	deleting operation will write to map.del
+//
 // As soon as clearing job done, mode set to M_FREE,
 // At this moment,
-//    map.m is return to job, writed and read
-//    map.write change to read-only and data in m.write will be sync to map.m then cleared
-//    map.del change to read-only and data in m.del will sync to map.m then cleared
-//    map.dirty are first be cleared and then synchronizing data from map.m and block new write request, after sync job done, finish all writing request.
+//
+//	map.m is return to job, writed and read
+//	map.write change to read-only and data in m.write will be sync to map.m then cleared
+//	map.del change to read-only and data in m.del will sync to map.m then cleared
+//	map.dirty are first be cleared and then synchronizing data from map.m and block new write request, after sync job done, finish all writing request.
 type Map struct {
+	mapName        string // 给map命名
+	stopWrite      int64  // 调试字段，请勿业务使用
+	stopBoostClear int64  // 调试字段,请勿业务使用
+
 	clearing int32
 
 	deltal *sync.RWMutex // 在增量复制时的锁
@@ -107,38 +114,42 @@ type Map struct {
 	dl    *sync.RWMutex
 	dirty map[string]Value
 
-	wl    *sync.RWMutex
-	write map[string]Value
+	write *innerMap
 
-	dll    *sync.RWMutex
 	offset int64
-	del    map[string]Value
+	del    *innerMap
 
 	// 支持list功能
 	listLock *sync.RWMutex
 }
 
 // Help viewing map's detail.
-//   b, e:= json.MarshalIndent(m.Detail(), "", "  ")
-//   fmt.Println(string(b))
+//
+//	b, e:= json.MarshalIndent(m.Detail(), "", "  ")
+//	fmt.Println(string(b))
 type mapView struct {
 	Mode int
 
-	M map[string]interface{}
+	MLen int // 正常状态下的读写map大小
 
-	Dirty map[string]interface{}
+	DirtyLen int // 清理期内的，临时脏map大小
 
-	Write map[string]interface{}
+	WriteLen int
 
 	Offset int64
-	Del    map[string]interface{}
+	DelLen int
 }
 
 func newMap() *Map {
+	return newMapWithName("UnNamed-Map")
+}
+
+func newMapWithName(mapName string) *Map {
 	return &Map{
-		deltal: &sync.RWMutex{},
-		modl:   &sync.RWMutex{},
-		mode:   M_FREE2,
+		mapName: mapName,
+		deltal:  &sync.RWMutex{},
+		modl:    &sync.RWMutex{},
+		mode:    M_FREE2,
 
 		l: &sync.RWMutex{},
 		m: make(map[string]Value),
@@ -146,11 +157,9 @@ func newMap() *Map {
 		dl:    &sync.RWMutex{},
 		dirty: make(map[string]Value),
 
-		wl:    &sync.RWMutex{},
-		write: make(map[string]Value),
+		write: newInnerMap(),
 
-		dll: &sync.RWMutex{},
-		del: make(map[string]Value),
+		del: newInnerMap(),
 
 		listLock: &sync.RWMutex{},
 	}
@@ -159,36 +168,6 @@ func newMap() *Map {
 // new a concurrent map
 func NewMap() *Map {
 	return newMap()
-}
-
-// Pause the world
-// gLock and gUnlock must run in pair
-func (m *Map) gLock() {
-	m.l.Lock()
-	m.wl.Lock()
-	m.dl.Lock()
-	m.dll.Lock()
-}
-
-// Continue
-func (m *Map) gUnlock() {
-	m.dll.Unlock()
-	m.dl.Unlock()
-	m.wl.Unlock()
-	m.l.Unlock()
-}
-
-func (m *Map) gRLock() {
-	m.l.RLock()
-	m.wl.RLock()
-	m.dl.RLock()
-	m.dll.RLock()
-}
-func (m *Map) gRUnlock() {
-	m.l.RUnlock()
-	m.wl.RUnlock()
-	m.dl.RUnlock()
-	m.dll.RUnlock()
 }
 
 func (m *Map) IsBusy() bool {
@@ -327,10 +306,11 @@ func (m *Map) set(key string, value interface{}, seconds int, nx bool, ops ...Op
 		}
 	}
 
+	// Busy时
 	if op.enable == false {
 
 		setm(m.dl, m.dirty, key, value, ext, offset, exp, nx)
-		setm(m.wl, m.write, key, value, ext, offset, exp, nx)
+		m.write.setm(key, value, ext, offset, exp, nx)
 		return nil
 	}
 
@@ -345,7 +325,7 @@ func (m *Map) set(key string, value interface{}, seconds int, nx bool, ops ...Op
 		}, exp, ext, offset)
 
 		// busy时，写入dir和write
-		casm(m.wl, m.write, key, func(old interface{}) (interface{}, error) {
+		m.write.casm(key, func(old interface{}) (interface{}, error) {
 			rs, e := incr(old, op.incrBy.delta)
 			if e != nil {
 				return nil, fmt.Errorf("err '%s' for key '%s'", e.Error(), key)
@@ -373,6 +353,9 @@ func (m *Map) offsetIncr() int64 {
 // If seconds are set -1, value will not be expired
 // expired keys will be deleted as soon as calling m.Get(key), or calling m.ClearExpireKeys()
 func (m *Map) SetEx(key string, value interface{}, seconds int) {
+	if m.stopWrite > 0 {
+		return
+	}
 	m.set(key, value, seconds, false)
 }
 
@@ -391,6 +374,10 @@ func (m *Map) SetExNx(key string, value interface{}, seconds int) {
 // increase key by 1.
 // If key is not an integer type, will do nothing
 func (m *Map) Incr(key string) int64 {
+	if m.stopWrite > 0 {
+		return -1
+	}
+
 	rs := m.set(key, nil, -1, false, Op{
 		incrBy: struct {
 			enable bool
@@ -403,6 +390,10 @@ func (m *Map) Incr(key string) int64 {
 
 // increase key by one with expire seconds
 func (m *Map) IncrEx(key string, seconds int) int64 {
+	if m.stopWrite > 0 {
+		return -1
+	}
+
 	// 通过get做失效
 	_, _ = m.get(key)
 	rs := m.set(key, nil, seconds, false, Op{
@@ -417,6 +408,9 @@ func (m *Map) IncrEx(key string, seconds int) int64 {
 
 // increase key by n
 func (m *Map) IncrBy(key string, n int) int64 {
+	if m.stopWrite > 0 {
+		return -1
+	}
 	// 通过get做失效
 	_, _ = m.get(key)
 
@@ -432,6 +426,10 @@ func (m *Map) IncrBy(key string, n int) int64 {
 
 // increase key by n with expire seconds
 func (m *Map) IncrByEx(key string, n int, seconds int) int64 {
+	if m.stopWrite > 0 {
+		return -1
+	}
+
 	// 通过get做失效
 	_, _ = m.get(key)
 
@@ -532,17 +530,6 @@ func (m *Map) get(key string) (interface{}, bool) {
 	m.modl.RUnlock()
 	shouldRUnlock = false
 	return getFrom(m.dl, m.dirty, key)
-	//// m繁忙时，读取dirty
-	//if m.isBusyWrapedBymodl() {
-	//	return getFrom(m.dl, m.dirty, key)
-	//}
-	//
-	//// m 处于迁移中,读取dir
-	//if m.isFree1WrapedBymodl() {
-	//	return getFrom(m.dl, m.dirty, key)
-	//}
-
-	return nil, false
 }
 
 // Delete todo, bug delete fail
@@ -556,11 +543,7 @@ func (m *Map) Delete(key string) {
 		deletem(m.l, m.m, key, ext)
 
 		func(ext int64) {
-			//fmt.Printf("del dir %s \n", key)
-			deletem(m.dl, m.dirty, key, ext)
-
-			// deletem(m.wl, m.write, key, ext)
-
+			deletem(m.dl, m.dirty, key, ext) // m和dir双删
 		}(ext)
 		return
 	}
@@ -583,87 +566,31 @@ func (m *Map) Delete(key string) {
 	// busy时，要删除dir, 并且追加命令进del
 	deletem(m.dl, m.dirty, key, ext)
 
-	setm(m.dll, m.del, key, "waiting-deleted", ext, offset, -1, false)
+	m.del.setm(key, "waiting-deleted", ext, offset, -1, false) // 随便设置一个value,只有ext是有效数据,用于同步待删key
 }
 
 func (m *Map) Detail() mapView {
-	var listMaxNum = 10
-	var flag = 0
 
-	mv := mapView{
-		M:     make(map[string]interface{}),
-		Dirty: make(map[string]interface{}),
-		Del:   make(map[string]interface{}),
-		Write: make(map[string]interface{}),
-	}
+	var mv mapView
 	mv.Offset = m.offset
 
 	m.l.RLock()
-	for k, _ := range m.m {
-		flag++
-		mv.M[k] = m.m[k].detail()
-		if flag > listMaxNum {
-			mv.M["reach-max-detail"] = "end"
-			break
-		}
-	}
+	mv.MLen = len(m.m)
 	m.l.RUnlock()
 
 	m.dl.RLock()
-	flag = 0
-	for k, _ := range m.dirty {
-		mv.Dirty[k] = m.dirty[k].detail()
-		flag++
-		if flag > listMaxNum {
-			mv.Dirty["reach-max-detail"] = "end"
-			break
-		}
-	}
+	mv.DirtyLen = len(m.dirty)
 	m.dl.RUnlock()
 
-	m.wl.RLock()
-	flag = 0
-	for k, _ := range m.write {
-		mv.Write[k] = m.write[k].detail()
-		flag++
-		if flag > listMaxNum {
-			mv.Write["reach-max-detail"] = "end"
-			break
-		}
-	}
-	m.wl.RUnlock()
+	mv.WriteLen = m.write.Len()
 
-	flag = 0
-	m.dll.RLock()
-	for k, _ := range m.del {
-		mv.Del[k] = m.del[k].detail()
-		flag++
-		if flag > listMaxNum {
-			mv.Del["reach-max-detail"] = "end"
-			break
-		}
-	}
-	m.dll.RUnlock()
+	mv.DelLen = m.del.Len()
 	return mv
 }
 
+// 暂未支持到key
 func (m *Map) DetailOf(key string) mapView {
-	mv := mapView{
-		Mode:  m.mode,
-		M:     make(map[string]interface{}),
-		Dirty: make(map[string]interface{}),
-		Del:   make(map[string]interface{}),
-		Write: make(map[string]interface{}),
-	}
-
-	m.gRLock()
-	defer m.gRUnlock()
-
-	mv.M = m.m[key].detail()
-	mv.Dirty = m.dirty[key].detail()
-	mv.Del = m.del[key].detail()
-	mv.Write = m.write[key].detail()
-	return mv
+	return m.Detail()
 }
 
 func (m *Map) PrintDetail() string {
@@ -744,11 +671,44 @@ func (m *Map) Len() int {
 // After clear job has been done, Map.dirty will be cleared and copy from Map.m, Map.write will be unwritenable and data in Map.write will sync to Map.m.
 func (m *Map) ClearExpireKeys() int {
 
+	if m.stopBoostClear > 0 {
+		return 0
+	}
+	return m.clearExpireKeysInternal()
+}
+
+var OpenLog = false
+
+func SetOpenLogOn() {
+	OpenLog = true
+}
+func SetOpenLogOff() {
+	OpenLog = false
+}
+
+func (m *Map) clearExpireKeysInternal() int {
+	var start = time.Now()
+	var beforeMeta = m.MetaStrings()
+
+	var result string
+	defer func() {
+
+		if OpenLog {
+			fmt.Printf("clearExpireKeysInternal mapName=%s cost=%dms metaBefore=%s after=%s result=%s\n",
+				m.GetMapName(),
+				time.Now().Sub(start).Milliseconds(),
+				beforeMeta,
+				m.MetaStrings(),
+				result)
+		}
+	}()
+
 	// 利用atomic，确保高并发下，只会有一个ClearExpireKeys被执行
 	v := atomic.AddInt32(&m.clearing, 1)
 	defer atomic.AddInt32(&m.clearing, -1)
 
 	if v != 1 {
+		result = fmt.Sprintf("上一次未执行完")
 		return 0
 	}
 
@@ -766,36 +726,36 @@ func (m *Map) ClearExpireKeys() int {
 
 	m.deltal.Lock()
 	m.l.Lock()
-	m.wl.RLock()
-	for k, v := range m.write {
-		v2, ok := m.m[k]
+
+	m.write.Range(func(key string, value Value) {
+		v2, ok := m.m[key]
 		if !ok {
-			m.m[k] = v
-		} else {
-			if v2.LatterThan(v) {
-				continue
-			}
+			m.m[key] = value // 同步键值
+			return
 		}
-	}
-	m.wl.RUnlock()
+
+		if v2.LatterThan(value) {
+			return // m里的值更新，不需要同步
+		}
+		m.m[key] = value // 同步键值
+		return
+	})
 
 	m.l.Unlock()
 
 	// sync deleted operation from Map.del
 	m.l.Lock()
 
-	m.dll.RLock()
-	for k, v := range m.del {
-		v2, ok := m.m[k]
+	m.del.Range(func(key string, value Value) {
+		v2, ok := m.m[key]
 		if !ok {
-			continue
+			return // 如果m已经没了，则不需要再删除
 		}
-		if v.LatterThan(v2) {
-			delete(m.m, k)
+		if !value.LatterThan(v2) {
+			return // 如果del里的值执行时间,在m之前，则说明也没必要删了
 		}
-	}
-
-	m.dll.RUnlock()
+		delete(m.m, key) // del期待删除的key，在m里删一下
+	})
 
 	m.l.Unlock()
 	m.deltal.Unlock()
@@ -805,15 +765,13 @@ func (m *Map) ClearExpireKeys() int {
 	m.setFree2()
 
 	// 进入free2时，清理write和del,dir
-	m.dll.Lock()
-	m.del = make(map[string]Value)
-	m.dll.Unlock()
+	m.del.resetMap()
 
-	m.wl.Lock()
-	m.write = make(map[string]Value)
-	m.wl.Unlock()
+	m.write.resetMap()
 
 	clearExpire(m.dl, m.dirty)
+
+	result = "ok"
 
 	return n
 }
@@ -997,40 +955,6 @@ func deletem(l *sync.RWMutex, m map[string]Value, key string, ext int64) {
 	return
 }
 
-func (m *Map) mirrorOf(key string) (interface{}, bool) {
-
-	m.gRLock()
-	mv, mexist := m.m[key]
-
-	wv, wexist := m.write[key]
-
-	dv, dexist := m.del[key]
-	m.gRUnlock()
-
-	if !mexist && !wexist {
-		return nil, false
-	}
-
-	nv := newestV(mv, wv)
-
-	if !dexist {
-		return nv.v, true
-	}
-
-	if dv.FormerThan(nv) {
-		return nv.v, true
-	}
-
-	return nil, false
-}
-
-func newestV(v1, v2 Value) Value {
-	if v1.FormerThan(v2) {
-		return v2
-	}
-	return v1
-}
-
 func casm(l *sync.RWMutex, m map[string]Value, key string, f func(old interface{}) (interface{}, error), exp int64, ext int64, offset int64) interface{} {
 	l.Lock()
 	defer l.Unlock()
@@ -1114,4 +1038,26 @@ func (m *Map) RPushNEX(key string, ex int, elem ...interface{}) error {
 	clist.RPushN(elem...)
 	m.SetEx(key, clist, ex)
 	return nil
+}
+
+func (m *Map) StopWrite() {
+	atomic.AddInt64(&m.stopWrite, 1)
+}
+func (m *Map) StopBoostClear() {
+	atomic.AddInt64(&m.stopBoostClear, 1)
+}
+
+func (m *Map) MetaStrings() string {
+	return JSONString(m.Detail())
+}
+
+func (m *Map) SetMapName(mapName string) {
+	m.mapName = mapName
+}
+
+func (m *Map) GetMapName() string {
+	if m.mapName == "" {
+		return "UnNamed-Map"
+	}
+	return m.mapName
 }

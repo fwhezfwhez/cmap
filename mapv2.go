@@ -1,6 +1,7 @@
 package cmap
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -21,14 +22,18 @@ type MapV2 struct {
 }
 
 func NewMapV2(hash func(string) int64, slotNum int, intervald time.Duration) *MapV2 {
+	return NewNamedMapV2("UnNamed-Map", slotNum, intervald)
+}
+
+func NewNamedMapV2(mapName string, slotNum int, intervald time.Duration) *MapV2 {
 	var mv2 = &MapV2{
-		hash:  hash,
+		hash:  nil,
 		slots: make([]*Map, slotNum, slotNum),
 		clear: make(chan struct{}, 1),
 	}
 
 	for i, _ := range mv2.slots {
-		mv2.slots[i] = newMap()
+		mv2.slots[i] = newMapWithName(fmt.Sprintf("%s_%d", mapName, i))
 	}
 
 	if mv2.hash == nil {
@@ -112,7 +117,6 @@ func (mv2 *MapV2) mapd(interval time.Duration) {
 			case <-time.After(interval):
 				for i, _ := range mv2.slots {
 					mv2.slots[i].ClearExpireKeys()
-					time.Sleep(10 * time.Second)
 				}
 			case <-mv2.clear:
 				return
@@ -126,4 +130,15 @@ func (mv2 *MapV2) PrintDetailOf(key string) string {
 
 	i := n % int64(mv2.len)
 	return mv2.slots[i].PrintDetailOf(key)
+}
+
+// 返回当前mapv2里各个数据的结果
+func (mv2 *MapV2) MetaStrings() []string {
+
+	var rss = make([]string, 0, 10)
+	for j, q := range mv2.slots {
+		rss = append(rss, fmt.Sprintf("cmapSpy map[%d]=%s\n", j, JSONString(q.Detail())))
+	}
+
+	return rss
 }

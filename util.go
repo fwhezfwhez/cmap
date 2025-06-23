@@ -1,6 +1,9 @@
 package cmap
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 var (
 	aucCRCHi = []byte{
@@ -138,4 +141,13 @@ func Int64(i interface{}) int64 {
 	default:
 		return 0
 	}
+}
+
+func JSONString(i interface{}) string {
+	bf, e := json.Marshal(i)
+	if e != nil {
+		return "{}"
+	}
+
+	return string(bf)
 }
